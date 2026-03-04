@@ -22,7 +22,7 @@ Key features:
 
 - **Overlayfs storage model** — a shared read-only base layer (`/data-base`) plus per-instance writable layers (`/data-diff/<index>`), enabling cheap cloning of Android state
 - **Service-based ADB access** — every instance gets a dedicated `ClusterIP` Service; optional `NodePort` / `LoadBalancer` exposure
-- **Temporary suspend** — `status.suspended` pauses an instance without touching `spec`, so GitOps tools (Flux, Argo CD) do not fight the controller
+- **Temporary suspend / on-demand wake** — `status.suspended` pauses an instance, `status.woken` forces it running, both without touching `spec`; GitOps tools (Flux, Argo CD) see no drift
 - **kubectl plugin** — `kubectl redroid` for port-forward, ADB, logs, and more
 - **Helm chart** — full parameterised installation with CRDs included
 
@@ -90,6 +90,7 @@ adb shell
 | Guide | Description |
 |---|---|
 | [Getting Started](docs/getting-started.md) | Full installation walkthrough |
+| [Examples](docs/examples.md) | Real-world patterns: MAA automation, wakeInstance, suspendInstance, base-layer init |
 | [API Reference](docs/api-reference.md) | `RedroidInstance` and `RedroidTask` field reference |
 | [kubectl Plugin](docs/kubectl-plugin.md) | `kubectl redroid` command reference |
 | [Architecture](docs/architecture.md) | Design decisions, overlayfs model, controller flow |
