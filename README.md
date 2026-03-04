@@ -91,7 +91,7 @@ adb shell
 |---|---|
 | [Getting Started](docs/getting-started.md) | Full installation walkthrough |
 | [Examples](docs/examples.md) | Real-world patterns: MAA automation, wakeInstance, suspendInstance, base-layer init |
-| [API Reference](https://isning.github.io/redroid-operator/docs/generated/crd-reference.md) | `RedroidInstance` and `RedroidTask` field reference (auto-generated from CRD schema) |
+| [API Reference](https://isning.github.io/redroid-operator/docs/generated/crd-reference) | `RedroidInstance` and `RedroidTask` field reference (auto-generated from CRD schema) |
 | [kubectl Plugin](docs/kubectl-plugin.md) | `kubectl redroid` command reference |
 | [Architecture](docs/architecture.md) | Design decisions, overlayfs model, controller flow |
 | [Helm Chart Reference](charts/redroid-operator/README.md) | Chart values reference |
