@@ -261,6 +261,6 @@ spec:
 ## Next Steps
 
 - [Examples](examples.md) — real-world patterns: MAA automation, wakeInstance, suspendInstance, base-layer init
-- [API Reference](api-reference.md) — all spec fields explained
+- [API Reference](https://isning.github.io/redroid-operator/docs/generated/crd-reference.md) — all spec fields explained (auto-generated)
 - [kubectl Plugin](kubectl-plugin.md) — full CLI reference
 - [Architecture](architecture.md) — deep-dive into the overlayfs model and controller design
