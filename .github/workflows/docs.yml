@@ -87,11 +87,10 @@ jobs:
             cd -
           fi
 
-          # Sync generated docs/ into gh-pages/docs/
+          # Sync docs/ into gh-pages/docs/ — rsync --delete removes stale files
           mkdir -p /tmp/gh-pages/docs/generated
-          cp -r docs/generated/. /tmp/gh-pages/docs/generated/
-          # Also sync the hand-written docs
-          cp docs/*.md /tmp/gh-pages/docs/
+          rsync -a --delete docs/generated/  /tmp/gh-pages/docs/generated/
+          rsync -a --delete --include='*.md' --exclude='*' docs/  /tmp/gh-pages/docs/
 
           # Update Helm chart README (in-repo, commit back to main via PR is done
           # separately; here we just stage it for gh-pages reference)
