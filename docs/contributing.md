@@ -55,8 +55,7 @@ hack/               Boilerplate headers
 2. Run `make generate` to regenerate DeepCopy methods
 3. Run `make manifests` to regenerate CRD YAML and RBAC
 4. Run `make helm-crds` to sync CRDs into the Helm chart
-5. Update `docs/api-reference.md` to reflect the changes
-6. Run `make docs` to regenerate auto-generated CRD reference
+5. Run `make docs` to regenerate the CRD reference (`docs/generated/crd-reference.md` is auto-updated on push to `main`)
 
 ### Adding a controller feature
 
@@ -112,7 +111,6 @@ go test -run TestRedroidInstanceReconciler ./internal/controller/
 - [ ] `make test` passes
 - [ ] `make lint` reports 0 issues
 - [ ] If API types changed: `make generate manifests helm-crds` was run and the generated files are committed
-- [ ] If API types changed: `docs/api-reference.md` is updated
 - [ ] CI checks pass (`actionlint` for workflow changes)
 
 ## Commit Convention
