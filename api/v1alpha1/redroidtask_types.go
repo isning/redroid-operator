@@ -120,8 +120,23 @@ type RedroidTaskSpec struct {
 	// then creates the Job. After the Job finishes the controller clears the field.
 	//
 	// This field is ignored for CronJob-based (scheduled) tasks.
+	// Mutually exclusive with WakeInstance.
 	// +optional
 	SuspendInstance bool `json:"suspendInstance,omitempty"`
+
+	// WakeInstance temporarily starts the referenced RedroidInstance Pod while the
+	// one-shot Job runs, then restores the original suspended state on Job completion/failure.
+	// Use this for on-demand instances that are normally stopped (spec.suspend: true).
+	//
+	// Mechanism: the task controller sets status.woken on each instance before creating the
+	// Job, waits until the instance Pod reaches phase=Running, then creates the Job.
+	// After the Job finishes the controller clears status.woken, allowing spec.suspend to
+	// take effect again.
+	//
+	// This field is ignored for CronJob-based (scheduled) tasks.
+	// Mutually exclusive with SuspendInstance.
+	// +optional
+	WakeInstance bool `json:"wakeInstance,omitempty"`
 
 	// ActiveDeadlineSeconds limits the duration of each Job in seconds.
 	// Jobs exceeding this limit are terminated. 0 means no limit.

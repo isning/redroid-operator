@@ -24,12 +24,17 @@ const (
 )
 
 // RedroidInstanceReconciler reconciles a RedroidInstance object.
-// It ensures a Pod exists and is running when neither spec.suspend nor
-// status.suspended is set, and deletes the Pod when either is true.
+// It ensures a Pod exists and is running when the instance should be running,
+// and deletes the Pod when it should be stopped.
 //
-// Temporary suspend (status.suspended) is designed for programmatic use
-// (e.g., RedroidTask with suspendInstance=true, or manual maintenance) without
-// touching spec.suspend, so GitOps tools like Flux do not overwrite the state.
+// Phase decision (highest priority first):
+//  1. status.woken non-nil and not expired → Running  (on-demand wake, overrides spec.suspend)
+//  2. spec.suspend == true                 → Stopped  (permanent user intent)
+//  3. status.suspended non-nil, not expired → Stopped (programmatic / maintenance override)
+//  4. default                              → Running
+//
+// Temporary overrides (status.suspended, status.woken) live in status so GitOps tools
+// like Flux do not reconcile them back, avoiding config drift.
 //
 // +kubebuilder:rbac:groups=redroid.io,resources=redroidinstances,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=redroid.io,resources=redroidinstances/status,verbs=get;update;patch
@@ -81,6 +86,16 @@ func (r *RedroidInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		return ctrl.Result{}, fmt.Errorf("reconcile service: %w", err)
 	}
 
+	// Auto-clear expired Woken.
+	if w := instance.Status.Woken; w != nil && w.Until != nil && w.Until.Time.Before(time.Now()) {
+		patch := client.MergeFrom(instance.DeepCopy())
+		instance.Status.Woken = nil
+		if err := r.Status().Patch(ctx, instance, patch); err != nil {
+			return ctrl.Result{}, fmt.Errorf("clear expired woken: %w", err)
+		}
+		logger.Info("cleared expired woken", "instance", instance.Name)
+	}
+
 	// Auto-clear expired Suspended before making scheduling decisions.
 	if ts := instance.Status.Suspended; ts != nil && ts.Until != nil && ts.Until.Time.Before(time.Now()) {
 		patch := client.MergeFrom(instance.DeepCopy())
@@ -91,7 +106,7 @@ func (r *RedroidInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		logger.Info("cleared expired suspended", "instance", instance.Name)
 	}
 
-	if isEffectivelySuspended(instance) {
+	if !desiredRunning(instance) {
 		// Desired state: no Pod running.
 		if err := r.deleteInstancePod(ctx, instance); err != nil {
 			return ctrl.Result{}, err
@@ -222,22 +237,28 @@ func instanceADBPort(instance *redroidv1alpha1.RedroidInstance) int32 {
 	return defaultADBPort
 }
 
-// isEffectivelySuspended returns true when the instance Pod should not be running,
-// considering both the GitOps-managed spec.suspend and the programmatic
-// status.suspended (set by tasks or manual operators).
-// An expired suspended (Until in the past) is treated as cleared.
-func isEffectivelySuspended(instance *redroidv1alpha1.RedroidInstance) bool {
+// desiredRunning returns true when the instance Pod should be running, applying
+// the four-level priority rule documented on RedroidInstanceReconciler.
+func desiredRunning(instance *redroidv1alpha1.RedroidInstance) bool {
+	// 1. Woken override — beats spec.suspend.
+	if w := instance.Status.Woken; w != nil {
+		if w.Until == nil || !w.Until.Time.Before(time.Now()) {
+			return true
+		}
+		// expired — fall through
+	}
+	// 2. Permanent user intent.
 	if instance.Spec.Suspend {
-		return true
-	}
-	ts := instance.Status.Suspended
-	if ts == nil {
 		return false
 	}
-	// Expired? Treat as not suspended — the reconciler clears it on the same pass.
-	if ts.Until != nil && ts.Until.Time.Before(time.Now()) {
-		return false
+	// 3. Programmatic / maintenance override.
+	if s := instance.Status.Suspended; s != nil {
+		if s.Until == nil || !s.Until.Time.Before(time.Now()) {
+			return false
+		}
+		// expired — fall through
 	}
+	// 4. Default: run.
 	return true
 }
 

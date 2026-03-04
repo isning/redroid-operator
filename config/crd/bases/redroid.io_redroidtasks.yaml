@@ -607,6 +607,7 @@ spec:
                   then creates the Job. After the Job finishes the controller clears the field.
 
                   This field is ignored for CronJob-based (scheduled) tasks.
+                  Mutually exclusive with WakeInstance.
                 type: boolean
               timezone:
                 description: |-
@@ -620,6 +621,20 @@ spec:
                 format: int32
                 minimum: 0
                 type: integer
+              wakeInstance:
+                description: |-
+                  WakeInstance temporarily starts the referenced RedroidInstance Pod while the
+                  one-shot Job runs, then restores the original suspended state on Job completion/failure.
+                  Use this for on-demand instances that are normally stopped (spec.suspend: true).
+
+                  Mechanism: the task controller sets status.woken on each instance before creating the
+                  Job, waits until the instance Pod reaches phase=Running, then creates the Job.
+                  After the Job finishes the controller clears status.woken, allowing spec.suspend to
+                  take effect again.
+
+                  This field is ignored for CronJob-based (scheduled) tasks.
+                  Mutually exclusive with SuspendInstance.
+                type: boolean
             required:
             - instances
             - integrations

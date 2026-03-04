@@ -89,6 +89,7 @@ spec: {}   # see fields below
 | `adbAddress` | `string` | In-cluster `host:port` to reach this instance's ADB. |
 | `conditions` | `[]Condition` | Detailed conditions: `Ready`, `Scheduled`. |
 | `suspended` | `SuspendedStatus` | Temporary suspend override (see [Temporary Suspend](#temporary-suspend)). |
+| `woken` | `WokenStatus` | Wake override set by the task controller (`wakeInstance`). Forces the instance Running even when `spec.suspend=true`. |
 
 ### SuspendedStatus
 
@@ -115,6 +116,18 @@ kubectl patch redroidinstance android-0 -n redroid-system \
   --subresource=status --type=merge \
   -p '{"status":{"suspended":null}}'
 ```
+
+### WokenStatus
+
+Set automatically by the task controller when `spec.wakeInstance=true`.  Mirrors `SuspendedStatus` but forces the instance **Running** instead of stopping it.
+
+| Field | Type | Description |
+|---|---|---|
+| `reason` | `string` | Human-readable explanation for the temporary wake. |
+| `until` | `Time` | Optional expiry timestamp. Controller auto-clears once elapsed. |
+| `actor` | `string` | Who set the wake (e.g. `task/maa-task`). |
+
+**Priority rule:** `status.woken` (highest) → `spec.suspend` → `status.suspended` → default Running.
 
 ### Base Mode
 
@@ -166,7 +179,8 @@ spec: {}   # see fields below
 | `timezone` | `string` | — | no | IANA timezone for the CronJob schedule (e.g. `Asia/Shanghai`). Requires Kubernetes ≥ 1.27. |
 | `startingDeadlineSeconds` | `integer` | — | no | Deadline (seconds) for starting a missed CronJob run. |
 | `backoffLimit` | `integer` | `0` | no | Number of retries before marking the Job failed. min: 0 |
-| `suspendInstance` | `boolean` | `false` | no | Temporarily stop the referenced instance Pod while the Job runs, then auto-resume. Only for one-shot tasks. |
+| `suspendInstance` | `boolean` | `false` | no | Temporarily stop the referenced instance Pod while the Job runs, then auto-resume. Only for one-shot tasks. Mutually exclusive with `wakeInstance`. |
+| `wakeInstance` | `boolean` | `false` | no | Temporarily start the referenced instance Pod (overrides `spec.suspend`) while the Job runs, then clears the wake-override. Only for one-shot tasks. Mutually exclusive with `suspendInstance`. |
 | `activeDeadlineSeconds` | `integer` | — | no | Max duration (seconds) for each Job. min: 1 |
 | `ttlSecondsAfterFinished` | `integer` | — | no | Automatically remove completed one-shot Jobs after N seconds. Ignored for scheduled tasks. |
 | `parallelism` | `integer` | len(instances) | no | Max concurrent instance Pods. Defaults to run all in parallel. min: 1 |

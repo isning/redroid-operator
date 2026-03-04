@@ -25,6 +25,10 @@ spec:
       name: Suspended
       priority: 1
       type: string
+    - jsonPath: .status.woken.actor
+      name: Woken
+      priority: 1
+      type: string
     - jsonPath: .status.phase
       name: Phase
       type: string
@@ -1477,6 +1481,32 @@ spec:
                     description: |-
                       Until is an optional expiry timestamp. The controller automatically clears the
                       temporary suspend (and restarts the Pod) once this time has passed.
+                    format: date-time
+                    type: string
+                type: object
+              woken:
+                description: |-
+                  Woken holds a wake-override set by the RedroidTask controller when spec.wakeInstance
+                  is true. The instance Pod runs while this field is non-nil, even if spec.suspend is true.
+                  Unlike spec.suspend, this field is not reconciled by GitOps tools (e.g. Flux).
+
+                  To manually wake: kubectl patch redroidinstance <name> --subresource=status
+                    --type=merge -p '{"status":{"woken":{"reason":"on-demand","actor":"manual"}}}'
+                  To clear: kubectl patch redroidinstance <name> --subresource=status
+                    --type=merge -p '{"status":{"woken":null}}'
+                properties:
+                  actor:
+                    description: Actor identifies who set the temporary wake, e.g.
+                      "task/maa-task".
+                    type: string
+                  reason:
+                    description: Reason is a human-readable explanation for the temporary
+                      wake.
+                    type: string
+                  until:
+                    description: |-
+                      Until is an optional expiry timestamp. The controller automatically clears the
+                      temporary wake (and lets spec.suspend take effect again) once this time has passed.
                     format: date-time
                     type: string
                 type: object

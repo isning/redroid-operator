@@ -117,8 +117,12 @@ func (r *RedroidTaskReconciler) resolveInstances(
 // When task.Spec.SuspendInstance is true the controller first sets
 // status.suspended on each instance (so the instance controller stops
 // the Pod), waits for the instance to reach phase Stopped, then creates the
-// Job.  After the Job finishes the temporary suspend is cleared, allowing the
-// instance Pod to restart.
+// Job.  After the Job finishes the temporary suspend is cleared.
+//
+// When task.Spec.WakeInstance is true the controller sets status.woken on each
+// instance (so the instance controller starts the Pod even when spec.suspend is
+// true), waits for phase Running, then creates the Job.  After the Job finishes
+// status.woken is cleared, allowing spec.suspend to take effect again.
 func (r *RedroidTaskReconciler) reconcileJobs(
 	ctx context.Context,
 	task *redroidv1alpha1.RedroidTask,
@@ -155,6 +159,27 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 					requeueAfter = 5 * time.Second
 					continue
 				}
+			} else if task.Spec.WakeInstance {
+				// Step 1: set woken if not yet set.
+				if inst.Status.Woken == nil {
+					if setErr := r.setInstanceWoken(ctx, inst,
+						"task/"+task.Name,
+						"on-demand wake for one-shot task "+task.Name,
+					); setErr != nil {
+						return ctrl.Result{}, setErr
+					}
+					logger.Info("set woken on instance; waiting for Pod to start",
+						"instance", inst.Name)
+					requeueAfter = 5 * time.Second
+					continue
+				}
+				// Step 2: wait for instance Pod to start.
+				if inst.Status.Phase != redroidv1alpha1.RedroidInstanceRunning {
+					logger.Info("waiting for instance to start before creating Job",
+						"instance", inst.Name, "phase", inst.Status.Phase)
+					requeueAfter = 5 * time.Second
+					continue
+				}
 			}
 			logger.Info("creating Job for instance", "job", jobName, "instance", inst.Name)
 			newJob := r.buildJob(task, inst, jobName, i)
@@ -173,13 +198,22 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 
 		if !isJobFinished(job) {
 			activeJobs = append(activeJobs, jobName)
-		} else if task.Spec.SuspendInstance && inst.Status.Suspended != nil {
-			// Job finished — clear temporary suspend so the instance Pod can restart.
-			if clrErr := r.clearInstanceSuspended(ctx, inst); clrErr != nil {
-				return ctrl.Result{}, clrErr
+		} else {
+			// Job finished — restore instance state.
+			if task.Spec.SuspendInstance && inst.Status.Suspended != nil {
+				if clrErr := r.clearInstanceSuspended(ctx, inst); clrErr != nil {
+					return ctrl.Result{}, clrErr
+				}
+				logger.Info("cleared suspended after Job completion",
+					"instance", inst.Name, "job", jobName)
 			}
-			logger.Info("cleared suspended after Job completion",
-				"instance", inst.Name, "job", jobName)
+			if task.Spec.WakeInstance && inst.Status.Woken != nil {
+				if clrErr := r.clearInstanceWoken(ctx, inst); clrErr != nil {
+					return ctrl.Result{}, clrErr
+				}
+				logger.Info("cleared woken after Job completion",
+					"instance", inst.Name, "job", jobName)
+			}
 		}
 	}
 
@@ -213,6 +247,31 @@ func (r *RedroidTaskReconciler) clearInstanceSuspended(
 ) error {
 	patch := client.MergeFrom(inst.DeepCopy())
 	inst.Status.Suspended = nil
+	return r.Status().Patch(ctx, inst, patch)
+}
+
+// setInstanceWoken patches status.woken on the instance, forcing it Running
+// even when spec.suspend is true.
+func (r *RedroidTaskReconciler) setInstanceWoken(
+	ctx context.Context,
+	inst *redroidv1alpha1.RedroidInstance,
+	actor, reason string,
+) error {
+	patch := client.MergeFrom(inst.DeepCopy())
+	inst.Status.Woken = &redroidv1alpha1.WokenStatus{
+		Actor:  actor,
+		Reason: reason,
+	}
+	return r.Status().Patch(ctx, inst, patch)
+}
+
+// clearInstanceWoken removes status.woken from the instance.
+func (r *RedroidTaskReconciler) clearInstanceWoken(
+	ctx context.Context,
+	inst *redroidv1alpha1.RedroidInstance,
+) error {
+	patch := client.MergeFrom(inst.DeepCopy())
+	inst.Status.Woken = nil
 	return r.Status().Patch(ctx, inst, patch)
 }
 

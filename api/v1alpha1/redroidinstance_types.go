@@ -229,7 +229,30 @@ const (
 	RedroidInstanceFailed  RedroidInstancePhase = "Failed"
 )
 
-// SuspendedStatus holds a suspend-override override that stops the instance Pod
+// WokenStatus holds a wake-override that forces the instance Pod to run even when
+// spec.suspend is true. Because this field lives in status it is not reconciled by
+// GitOps tools such as Flux, preventing config drift.
+//
+// Set by: the RedroidTask controller when spec.wakeInstance is true.
+// Clear by patching status.woken to null, or rely on the automatic expiry if Until is set.
+//
+// Priority: woken overrides spec.suspend and status.suspended.
+type WokenStatus struct {
+	// Reason is a human-readable explanation for the temporary wake.
+	// +optional
+	Reason string `json:"reason,omitempty"`
+
+	// Until is an optional expiry timestamp. The controller automatically clears the
+	// temporary wake (and lets spec.suspend take effect again) once this time has passed.
+	// +optional
+	Until *metav1.Time `json:"until,omitempty"`
+
+	// Actor identifies who set the temporary wake, e.g. "task/maa-task".
+	// +optional
+	Actor string `json:"actor,omitempty"`
+}
+
+// SuspendedStatus holds a suspend-override that stops the instance Pod
 // without modifying spec.suspend. Because this field lives in status it is not reconciled by
 // GitOps tools such as Flux, preventing config drift.
 //
@@ -286,6 +309,17 @@ type RedroidInstanceStatus struct {
 	//   --type=merge -p '{"status":{"suspended":null}}'
 	// +optional
 	Suspended *SuspendedStatus `json:"suspended,omitempty"`
+
+	// Woken holds a wake-override set by the RedroidTask controller when spec.wakeInstance
+	// is true. The instance Pod runs while this field is non-nil, even if spec.suspend is true.
+	// Unlike spec.suspend, this field is not reconciled by GitOps tools (e.g. Flux).
+	//
+	// To manually wake: kubectl patch redroidinstance <name> --subresource=status
+	//   --type=merge -p '{"status":{"woken":{"reason":"on-demand","actor":"manual"}}}'
+	// To clear: kubectl patch redroidinstance <name> --subresource=status
+	//   --type=merge -p '{"status":{"woken":null}}'
+	// +optional
+	Woken *WokenStatus `json:"woken,omitempty"`
 }
 
 // +kubebuilder:object:root=true
@@ -293,6 +327,7 @@ type RedroidInstanceStatus struct {
 // +kubebuilder:printcolumn:name="Index",type=integer,JSONPath=".spec.index"
 // +kubebuilder:printcolumn:name="Suspend",type=boolean,JSONPath=".spec.suspend"
 // +kubebuilder:printcolumn:name="Suspended",type=string,JSONPath=".status.suspended.actor",priority=1
+// +kubebuilder:printcolumn:name="Woken",type=string,JSONPath=".status.woken.actor",priority=1
 // +kubebuilder:printcolumn:name="Phase",type=string,JSONPath=".status.phase"
 // +kubebuilder:printcolumn:name="Pod",type=string,JSONPath=".status.podName"
 // +kubebuilder:printcolumn:name="ADB",type=string,JSONPath=".status.adbAddress"

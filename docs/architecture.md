@@ -70,10 +70,15 @@ The reconciler is triggered on every `RedroidInstance` change and runs the follo
 
 ```
 Reconcile(instance)
-  ├─ determine desired phase (Running / Stopped)
-  │    ├─ spec.suspend == true → Stopped
-  │    ├─ status.suspended != nil → Stopped (temporary override)
-  │    └─ otherwise → Running
+  ├─ determine desired phase (Running / Stopped) — 4-level priority
+  │    ├─ status.woken != nil (not expired) → Running  (overrides everything)
+  │    ├─ spec.suspend == true              → Stopped
+  │    ├─ status.suspended != nil           → Stopped  (temporary override)
+  │    └─ otherwise                         → Running
+  │
+  ├─ auto-clear expired overrides
+  │    ├─ status.woken.Until elapsed   → clear status.woken
+  │    └─ status.suspended.Until elapsed → clear status.suspended
   │
   ├─ ensure Pod
   │    ├─ phase == Running → create Pod if not exists, adopt if orphaned
@@ -84,8 +89,7 @@ Reconcile(instance)
   │
   ├─ update status
   │    ├─ phase, podName, adbAddress
-  │    ├─ conditions (Ready, Scheduled)
-  │    └─ check status.suspended.Until expiry → auto-clear if elapsed
+  │    └─ conditions (Ready, Scheduled)
   │
   └─ requeue if pod not yet in Running phase
 ```
@@ -106,9 +110,13 @@ Reconcile(task)
   │    ├─ if spec.suspendInstance
   │    │    ├─ patch status.suspended on each referenced instance
   │    │    └─ wait until all instance pods are Stopped
+  │    ├─ if spec.wakeInstance
+  │    │    ├─ patch status.woken on each referenced instance
+  │    │    └─ wait until all instance pods are Running
   │    ├─ create Job per instance (or use spec.parallelism to limit concurrency)
   │    ├─ watch Job completion/failure
-  │    └─ clear status.suspended on instances (auto-resume)
+  │    ├─ clear status.suspended on instances (auto-resume) if suspendInstance
+  │    └─ clear status.woken on instances (returns to spec.suspend) if wakeInstance
   │
   └─ scheduled task (spec.schedule != "")
        ├─ create/update CronJob per instance
@@ -124,24 +132,26 @@ For each integration container the controller injects:
 
 ConfigMap keys from `spec.integrations[].configs` are mounted as volumes at the specified `mountPath`.
 
-## Temporary Suspend (`status.suspended`)
+## Temporary Suspend / Wake (`status.suspended` / `status.woken`)
 
 A key design goal is compatibility with GitOps tools. If the controller modified `spec.suspend` when automatically pausing an instance for a task, Flux/Argo CD would continuously revert the change, causing reconciliation fights.
 
-The solution: suspension is represented in **`status`** not **`spec`**. Status is not tracked by GitOps tools. The field `status.suspended` acts as a runtime override:
+The solution: suspension and wake overrides live in **`status`** not **`spec`**. Status is not tracked by GitOps tools. The 4-level priority table governs the desired Pod phase:
 
 ```
-spec.suspend   status.suspended   │  Pod desired phase
-─────────────────────────────────────────────────────
-false          nil                │  Running
-false          non-nil            │  Stopped (override)
-true           nil                │  Stopped
-true           non-nil            │  Stopped
+status.woken   spec.suspend   status.suspended   │  Pod desired phase
+───────────────────────────────────────────────────────────────────
+non-nil        any            any                │  Running  (wake wins)
+nil            false          nil                │  Running  (default)
+nil            false          non-nil            │  Stopped  (temp stop)
+nil            true           nil                │  Stopped  (GitOps intent)
+nil            true           non-nil            │  Stopped
 ```
 
-The `Until` field allows timed auto-release:
+The `Until` field allows timed auto-release for both `status.suspended` and `status.woken`:
 
 ```yaml
+# Temporary stop
 status:
   suspended:
     reason: "task/maa-task is running"
@@ -149,7 +159,15 @@ status:
     until: "2025-01-12T04:30:00Z"
 ```
 
-After `Until` passes, the controller clears `status.suspended` and the Pod resumes automatically.
+```yaml
+# On-demand wake (set automatically by task controller)
+status:
+  woken:
+    reason: "on-demand wake for one-shot task maa-task"
+    actor: "task/maa-task"
+```
+
+After `Until` passes, the controller auto-clears the override. The task controller clears `status.woken` after Job completion so the instance returns to the `spec.suspend` state.
 
 ## Service-Based Port-Forward
 
