@@ -1,0 +1,43 @@
+# ClusterRole for kubectl-redroid plugin users.
+# Bind this to a user/group/ServiceAccount with a ClusterRoleBinding.
+#
+# Example:
+#   kubectl create clusterrolebinding redroid-plugin-<user> \
+#     --clusterrole=redroid-plugin-user \
+#     --user=<user>
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: redroid-plugin-user
+  labels:
+    app.kubernetes.io/part-of: redroid-operator
+rules:
+  # Read/write RedroidInstances (list, describe, suspend, resume)
+  - apiGroups: [redroid.io]
+    resources: [redroidinstances]
+    verbs: [get, list, watch]
+  - apiGroups: [redroid.io]
+    resources: [redroidinstances/status]
+    verbs: [get, update, patch]
+  # Read RedroidTasks (list, describe, trigger)
+  - apiGroups: [redroid.io]
+    resources: [redroidtasks]
+    verbs: [get, list, watch]
+  # Pod access for logs (via label selector, not pod name)
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  # Service access for port-forward (operator creates one Service per instance)
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list, watch]
+  - apiGroups: [""]
+    resources: [services/portforward]
+    verbs: [create]
+  # Job/CronJob access for task trigger and task logs
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch, create]

@@ -1,0 +1,297 @@
+name: Release
+
+# Publishes a versioned release when a v* tag is pushed.
+# Artifacts:
+#   * Container image:  ghcr.io/isning/redroid-operator:<version>  (+ :latest)
+#   * Helm chart OCI:   oci://ghcr.io/isning/charts/redroid-operator:<version>
+#   * Helm chart tgz:   uploaded to GitHub Release
+#   * Helm repo index:  index.yaml on gh-pages branch (tgz URLs → GitHub Release)
+#   * crds.yaml:        combined CRD file uploaded to GitHub Release
+#   * CLI binaries:     tar.gz / zip per platform, uploaded to GitHub Release
+#
+# Helm install:
+#   helm repo add redroid https://isning.github.io/redroid-operator
+#   helm install redroid-operator redroid/redroid-operator
+# -- or via OCI --
+#   helm install redroid-operator oci://ghcr.io/isning/charts/redroid-operator
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create GitHub Release + push gh-pages branch
+  packages: write   # push to GHCR (image + OCI chart)
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/isning/redroid-operator
+  CHART_REPO: ghcr.io/isning/charts
+
+jobs:
+  # ── container image ──────────────────────────────────────────────────────────
+  image:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── helm chart ───────────────────────────────────────────────────────────────
+  helm-chart:
+    name: Package Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Generate CRDs and sync into chart
+        run: make manifests helm-crds
+
+      - name: Set chart version from tag
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"   # strip leading 'v' for SemVer
+          sed -i "s/^version:.*/version: ${VERSION}/" charts/redroid-operator/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${GITHUB_REF_NAME}\"/" charts/redroid-operator/Chart.yaml
+
+      - name: Package Helm chart
+        run: |
+          mkdir -p dist
+          helm package charts/redroid-operator --destination dist/
+
+      - name: Combine CRDs into single file for release asset
+        run: |
+          {
+            cat charts/redroid-operator/crds/redroid.io_redroidinstances.yaml
+            echo "---"
+            cat charts/redroid-operator/crds/redroid.io_redroidtasks.yaml
+          } > dist/crds.yaml
+
+      - name: Upload chart and CRDs as artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: helm-chart
+          path: |
+            dist/redroid-operator-*.tgz
+            dist/crds.yaml
+          if-no-files-found: error
+
+  # ── cli binaries ─────────────────────────────────────────────────────────────
+  cli:
+    name: Build CLI (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Build and package kubectl-redroid
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          mkdir -p dist
+          if [[ "$GOOS" == "windows" ]]; then
+            go build -mod=vendor \
+              -ldflags "-s -w -X github.com/isning/redroid-operator/cmd/kubectl-redroid/cmd.Version=${VERSION}" \
+              -o dist/kubectl-redroid.exe \
+              ./cmd/kubectl-redroid/
+            zip -j "dist/kubectl-redroid-${VERSION}-${GOOS}-${GOARCH}.zip" dist/kubectl-redroid.exe
+            rm dist/kubectl-redroid.exe
+          else
+            go build -mod=vendor \
+              -ldflags "-s -w -X github.com/isning/redroid-operator/cmd/kubectl-redroid/cmd.Version=${VERSION}" \
+              -o dist/kubectl-redroid \
+              ./cmd/kubectl-redroid/
+            tar -czf "dist/kubectl-redroid-${VERSION}-${GOOS}-${GOARCH}.tar.gz" \
+              -C dist kubectl-redroid
+            rm dist/kubectl-redroid
+          fi
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: |
+            dist/kubectl-redroid-*.tar.gz
+            dist/kubectl-redroid-*.zip
+          if-no-files-found: error
+
+  # ── publish: GitHub Release + OCI chart ──────────────────────────────────────
+  publish:
+    name: Publish release
+    runs-on: ubuntu-latest
+    needs: [image, helm-chart, cli]
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Log in to GHCR (Helm OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ${{ env.REGISTRY }} \
+              --username ${{ github.actor }} \
+              --password-stdin
+
+      - name: Push Helm chart to OCI registry
+        run: |
+          tgz=$(ls artifacts/redroid-operator-*.tgz)
+          helm push "${tgz}" oci://${{ env.CHART_REPO }}
+          # Alias as 'latest' so consumers can track the current stable release
+          VERSION="${GITHUB_REF_NAME#v}"
+          crane tag "${{ env.CHART_REPO }}/redroid-operator:${VERSION}" latest
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/kubectl-redroid-*.tar.gz
+            artifacts/kubectl-redroid-*.zip
+            artifacts/redroid-operator-*.tgz
+            artifacts/crds.yaml
+          generate_release_notes: true
+
+  # ── gh-pages (Helm classic repo index) ───────────────────────────────────────
+  gh-pages:
+    name: Update Helm repo index on gh-pages
+    runs-on: ubuntu-latest
+    needs: [publish]   # run after GitHub Release is live so tgz URLs are valid
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Download chart artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: helm-chart
+          path: chart-artifacts/
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Set up gh-pages worktree
+        run: |
+          git fetch origin gh-pages || true
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            git worktree add /tmp/gh-pages origin/gh-pages
+          else
+            # First-time: create an orphan branch with a minimal README
+            git worktree add --detach /tmp/gh-pages HEAD
+            cd /tmp/gh-pages
+            git checkout --orphan gh-pages
+            git reset --hard
+            {
+              echo "# redroid-operator Helm Repository"
+              echo ""
+              echo "    helm repo add redroid https://isning.github.io/redroid-operator"
+              echo "    helm repo update"
+              echo "    helm install redroid-operator redroid/redroid-operator"
+              echo ""
+              echo "Or via OCI:"
+              echo ""
+              echo "    helm install redroid-operator oci://ghcr.io/isning/charts/redroid-operator"
+            } > README.md
+            git add README.md
+            git commit -m "chore: initialize Helm chart repository"
+          fi
+
+      - name: Generate / merge index.yaml
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          RELEASE_BASE="https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}"
+          CHART_TGZ="redroid-operator-${VERSION}.tgz"
+
+          mkdir -p /tmp/staging
+          cp "chart-artifacts/${CHART_TGZ}" /tmp/staging/
+
+          # Merge with existing index so older releases are preserved
+          if [[ -f /tmp/gh-pages/index.yaml ]]; then
+            helm repo index /tmp/staging \
+              --url "${RELEASE_BASE}" \
+              --merge /tmp/gh-pages/index.yaml
+          else
+            helm repo index /tmp/staging \
+              --url "${RELEASE_BASE}"
+          fi
+
+          # Only store index.yaml on gh-pages; tgz is served from GitHub Releases
+          cp /tmp/staging/index.yaml /tmp/gh-pages/
+
+      - name: Commit and push
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          cd /tmp/gh-pages
+          git add index.yaml
+          git diff --staged --quiet && exit 0
+          git commit -m "chore: release redroid-operator ${VERSION}"
+          git push origin HEAD:gh-pages

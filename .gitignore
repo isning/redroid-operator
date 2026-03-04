@@ -1,0 +1,12 @@
+# nix-direnv cache
+.direnv/
+
+# Build output
+bin/
+dist/
+
+# Test coverage
+coverage.out
+coverage.html
+
+.pre-commit-config.yaml

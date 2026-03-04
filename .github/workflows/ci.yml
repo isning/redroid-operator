@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  # ── test ─────────────────────────────────────────────────────────────────────
+  test:
+    name: Test (Go ${{ matrix.go }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        go: ["1.22.x", "1.23.x", "stable"]
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: Build operator
+        run: go build -mod=vendor -o bin/manager ./cmd/
+
+      - name: Build kubectl-redroid plugin
+        run: go build -mod=vendor -o bin/kubectl-redroid ./cmd/kubectl-redroid/
+
+      - name: Run tests
+        run: go test -mod=vendor ./... -count=1 -race
+
+  # ── lint ─────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.10.1
+          args: --timeout=5m
+
+  # ── build-plugin ─────────────────────────────────────────────────────────────
+  build-plugin:
+    name: Build kubectl-redroid (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Build
+        run: |
+          EXT=""
+          [[ "$GOOS" == "windows" ]] && EXT=".exe"
+          go build -mod=vendor \
+            -ldflags "-X github.com/isning/redroid-operator/cmd/kubectl-redroid/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+            -o "bin/kubectl-redroid-${GOOS}-${GOARCH}${EXT}" \
+            ./cmd/kubectl-redroid/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kubectl-redroid-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: bin/kubectl-redroid-*
+          if-no-files-found: error
+
+  # ── helm-lint ─────────────────────────────────────────────────────────────────
+  helm-lint:
+    name: Helm chart lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Generate CRDs and sync into chart
+        run: make manifests helm-crds
+
+      - name: Lint Helm chart
+        run: helm lint charts/redroid-operator

@@ -1,0 +1,50 @@
+{{- if .Values.rbac.create -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "redroid-operator.fullname" . }}-manager
+  labels:
+    {{- include "redroid-operator.labels" . | nindent 4 }}
+rules:
+  # RedroidInstance CRD
+  - apiGroups: [redroid.io]
+    resources: [redroidinstances]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [redroid.io]
+    resources: [redroidinstances/status, redroidinstances/finalizers]
+    verbs: [get, update, patch]
+  # RedroidTask CRD
+  - apiGroups: [redroid.io]
+    resources: [redroidtasks]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [redroid.io]
+    resources: [redroidtasks/status, redroidtasks/finalizers]
+    verbs: [get, update, patch]
+  # Core: Pods, Services and ConfigMaps
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [services/portforward]
+    verbs: [create, get]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  # Batch: Jobs and CronJobs
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Leader election
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]
+{{- end }}

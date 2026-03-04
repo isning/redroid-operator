@@ -1,0 +1,229 @@
+name: Snapshot
+
+# Build and publish snapshot artifacts on every push to the default branch.
+# Artifacts:
+#   * Container image: ghcr.io/isning/redroid-operator:sha-<short> + :main
+#   * Helm chart OCI:  oci://ghcr.io/isning/charts/redroid-operator:0.0.0-snapshot + :main
+#   * Helm chart tgz:  uploaded to a rolling 'snapshot' GitHub pre-release (overwritten)
+#   * Helm repo index: index.yaml on gh-pages (0.0.0-snapshot entry overwritten each time)
+#   * CLI binaries:    uploaded to the rolling 'snapshot' GitHub pre-release (overwritten)
+
+on:
+  push:
+    branches: [main, master]
+
+permissions:
+  contents: write   # create/overwrite snapshot pre-release + push gh-pages branch
+  packages: write   # push images and OCI chart to GHCR
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ghcr.io/isning/redroid-operator
+  CHART_REPO: ghcr.io/isning/charts
+
+jobs:
+  # ── container image ──────────────────────────────────────────────────────────
+  image:
+    name: Snapshot image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up QEMU (cross-platform emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=main
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── helm chart ───────────────────────────────────────────────────────────────
+  helm-chart:
+    name: Snapshot Helm chart
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0   # needed for gh-pages worktree
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Install crane
+        uses: imjasonh/setup-crane@v0.4
+
+      - name: Generate CRDs and sync into chart
+        run: make manifests helm-crds
+
+      - name: Log in to GHCR (Helm OCI)
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | \
+            helm registry login ${{ env.REGISTRY }} \
+              --username ${{ github.actor }} \
+              --password-stdin
+          crane auth login ${{ env.REGISTRY }} \
+            --username ${{ github.actor }} \
+            --password "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Package chart
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          # Fixed version: gh-pages entry is always overwritten, not appended
+          sed -i "s/^version:.*/version: 0.0.0-snapshot/" charts/redroid-operator/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"sha-${SHORT_SHA}\"/" charts/redroid-operator/Chart.yaml
+          mkdir -p dist
+          helm package charts/redroid-operator --destination dist/
+
+      - name: Push chart to OCI registry
+        run: |
+          helm push dist/redroid-operator-0.0.0-snapshot.tgz oci://${{ env.CHART_REPO }}
+          crane tag "${{ env.CHART_REPO }}/redroid-operator:0.0.0-snapshot" main
+
+      - name: Upload chart to rolling snapshot pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: snapshot
+          name: Snapshot (latest main)
+          prerelease: true
+          body: |
+            Rolling snapshot built from `main` — automatically overwritten on every push.
+
+            Install via Helm repo:
+                helm repo add redroid https://isning.github.io/redroid-operator
+                helm install redroid-operator redroid/redroid-operator --version 0.0.0-snapshot
+
+            Install via OCI (tracks latest main):
+                helm install redroid-operator oci://ghcr.io/isning/charts/redroid-operator --version main
+          files: dist/redroid-operator-0.0.0-snapshot.tgz
+
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Update gh-pages index.yaml
+        run: |
+          RELEASE_BASE="https://github.com/${{ github.repository }}/releases/download/snapshot"
+
+          git fetch origin gh-pages || true
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            git worktree add /tmp/gh-pages origin/gh-pages
+          else
+            git worktree add --detach /tmp/gh-pages HEAD
+            cd /tmp/gh-pages
+            git checkout --orphan gh-pages
+            git reset --hard
+            {
+              echo "# redroid-operator Helm Repository"
+              echo ""
+              echo "    helm repo add redroid https://isning.github.io/redroid-operator"
+              echo "    helm install redroid-operator redroid/redroid-operator"
+            } > README.md
+            git add README.md
+            git commit -m "chore: initialize Helm chart repository"
+            cd -
+          fi
+
+          # Build index; fixed version 0.0.0-snapshot means --merge replaces the entry
+          mkdir -p /tmp/staging
+          cp dist/redroid-operator-0.0.0-snapshot.tgz /tmp/staging/
+          if [[ -f /tmp/gh-pages/index.yaml ]]; then
+            helm repo index /tmp/staging \
+              --url "${RELEASE_BASE}" \
+              --merge /tmp/gh-pages/index.yaml
+          else
+            helm repo index /tmp/staging --url "${RELEASE_BASE}"
+          fi
+          cp /tmp/staging/index.yaml /tmp/gh-pages/
+
+          cd /tmp/gh-pages
+          git add index.yaml
+          git diff --staged --quiet && exit 0
+          git commit -m "chore: update snapshot $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin HEAD:gh-pages
+
+  # ── cli binaries ─────────────────────────────────────────────────────────────
+  cli:
+    name: Snapshot CLI (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: darwin
+            goarch: arm64
+          - goos: windows
+            goarch: amd64
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Build and package kubectl-redroid
+        run: |
+          mkdir -p dist
+          if [[ "$GOOS" == "windows" ]]; then
+            go build -mod=vendor \
+              -ldflags "-s -w -X github.com/isning/redroid-operator/cmd/kubectl-redroid/cmd.Version=0.0.0-snapshot" \
+              -o dist/kubectl-redroid.exe \
+              ./cmd/kubectl-redroid/
+            zip -j "dist/kubectl-redroid-0.0.0-snapshot-${GOOS}-${GOARCH}.zip" dist/kubectl-redroid.exe
+            rm dist/kubectl-redroid.exe
+          else
+            go build -mod=vendor \
+              -ldflags "-s -w -X github.com/isning/redroid-operator/cmd/kubectl-redroid/cmd.Version=0.0.0-snapshot" \
+              -o dist/kubectl-redroid \
+              ./cmd/kubectl-redroid/
+            tar -czf "dist/kubectl-redroid-0.0.0-snapshot-${GOOS}-${GOARCH}.tar.gz" \
+              -C dist kubectl-redroid
+            rm dist/kubectl-redroid
+          fi
+
+      - name: Upload CLI to rolling snapshot pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: snapshot
+          name: Snapshot (latest main)
+          prerelease: true
+          files: dist/kubectl-redroid-0.0.0-snapshot-${{ matrix.goos }}-${{ matrix.goarch }}.*

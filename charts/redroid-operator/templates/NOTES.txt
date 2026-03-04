@@ -1,0 +1,30 @@
+## redroid-operator has been installed!
+
+Controller-manager is running in namespace {{ .Release.Namespace }}.
+It manages RedroidInstance and RedroidTask resources cluster-wide.
+
+----- Quick start -----
+
+1. List instances:
+   kubectl get redroidinstances -A
+
+2. Install the kubectl plugin (kubectl-redroid):
+   https://github.com/isning/redroid-operator/releases
+
+   Then:
+   kubectl redroid get instances
+
+3. CRD management:
+   CRDs are installed in charts/redroid-operator/crds/ and applied
+   automatically on first install.  On upgrades, Helm does NOT
+   automatically update CRDs — apply them manually if the schema changed:
+
+   kubectl apply -f https://github.com/isning/redroid-operator/releases/latest/download/crds.yaml
+
+----- Useful commands -----
+
+  # Show deployed resources
+  kubectl get all -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }}
+
+  # View manager logs
+  kubectl logs -n {{ .Release.Namespace }} -l control-plane=controller-manager -f

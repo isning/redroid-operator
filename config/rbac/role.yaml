@@ -1,0 +1,41 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: redroid-operator-manager-role
+rules:
+  # RedroidInstance CRD
+  - apiGroups: [redroid.io]
+    resources: [redroidinstances]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [redroid.io]
+    resources: [redroidinstances/status, redroidinstances/finalizers]
+    verbs: [get, update, patch]
+  # RedroidTask CRD
+  - apiGroups: [redroid.io]
+    resources: [redroidtasks]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [redroid.io]
+    resources: [redroidtasks/status, redroidtasks/finalizers]
+    verbs: [get, update, patch]
+  # Core: Pods and ConfigMaps
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  # Batch: Jobs and CronJobs
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch, create, update, patch, delete]
+  # Leader election
+  - apiGroups: [""]
+    resources: [configmaps]
+    verbs: [get, list, watch, create, update, patch, delete]
+  - apiGroups: [coordination.k8s.io]
+    resources: [leases]
+    verbs: [get, list, watch, create, update, patch, delete]

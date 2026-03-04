@@ -1,0 +1,34 @@
+{{- /* crdoc Markdown template — produces a structured API reference page */ -}}
+# CRD API Reference
+
+> **Auto-generated** from `config/crd/bases/`. Do not edit by hand.
+> Group: `redroid.io`  Version: `v1alpha1`
+
+---
+{{ range .Groups }}{{ range .Versions }}{{ range .Kinds }}
+## {{ .Name }}
+
+{{ .Description }}
+
+{{ if .Version }}**APIVersion:** `{{ $.GroupName }}/{{ .Version }}`{{ end }}
+
+{{ if .SpecFields }}
+### Spec Fields
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+{{ range .SpecFields -}}
+| `{{ .Name }}` | `{{ .Type }}` | {{ if .Required }}**yes**{{ else }}no{{ end }} | {{ .Description }} |
+{{ end }}
+{{ end }}
+{{ if .StatusFields }}
+### Status Fields
+
+| Field | Type | Description |
+|---|---|---|
+{{ range .StatusFields -}}
+| `{{ .Name }}` | `{{ .Type }}` | {{ .Description }} |
+{{ end }}
+{{ end }}
+---
+{{ end }}{{ end }}{{ end }}

@@ -1,0 +1,714 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.17.0
+  name: redroidtasks.redroid.io
+spec:
+  group: redroid.io
+  names:
+    kind: RedroidTask
+    listKind: RedroidTaskList
+    plural: redroidtasks
+    singular: redroidtask
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.schedule
+      name: Schedule
+      type: string
+    - jsonPath: .spec.suspend
+      name: Suspend
+      type: boolean
+    - jsonPath: .status.activeJobs
+      name: Active
+      type: integer
+    - jsonPath: .status.lastScheduleTime
+      name: LastSchedule
+      type: date
+    - jsonPath: .status.lastSuccessfulTime
+      name: LastSuccess
+      type: date
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          RedroidTask is the Schema for the redroidtasks API.
+          It describes a workload (one-shot or recurring via CronJob) that runs integration
+          tool containers against a set of RedroidInstance overlay partitions.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: RedroidTaskSpec defines the desired state of RedroidTask.
+            properties:
+              activeDeadlineSeconds:
+                description: |-
+                  ActiveDeadlineSeconds limits the duration of each Job in seconds.
+                  Jobs exceeding this limit are terminated. 0 means no limit.
+                format: int64
+                minimum: 1
+                type: integer
+              backoffLimit:
+                default: 0
+                description: |-
+                  BackoffLimit specifies the number of retries before marking the Job as failed.
+                  Defaults to 0 (no retries).
+                format: int32
+                minimum: 0
+                type: integer
+              failedJobsHistoryLimit:
+                default: 3
+                description: FailedJobsHistoryLimit controls how many failed CronJob-spawned
+                  Jobs to retain. Defaults to 3.
+                format: int32
+                minimum: 0
+                type: integer
+              imagePullSecrets:
+                description: ImagePullSecrets applies to all integration containers
+                  in this task.
+                items:
+                  description: |-
+                    LocalObjectReference contains enough information to let you locate the
+                    referenced object inside the same namespace.
+                  properties:
+                    name:
+                      description: |-
+                        Name of the referent.
+                        More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                      type: string
+                  type: object
+                  x-kubernetes-map-type: atomic
+                type: array
+              instances:
+                description: |-
+                  Instances lists the RedroidInstance resources that this task targets.
+                  Each instance runs its own Job/CronJob execution, inheriting
+                  the instance's image, overlayfs PVCs, and GPU settings.
+                items:
+                  description: InstanceRef selects a RedroidInstance by name to include
+                    in a task run.
+                  properties:
+                    name:
+                      description: Name is the RedroidInstance name in the same namespace.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                minItems: 1
+                type: array
+              integrations:
+                description: |-
+                  Integrations is the ordered list of tool containers executed per instance.
+                  They run as regular containers alongside the redroid sidecar, sharing localhost.
+                items:
+                  description: |-
+                    IntegrationSpec describes a tool container that runs against the Redroid ADB.
+                    ADB address is injected as ADB_ADDRESS env var; instance index as INSTANCE_INDEX.
+                  properties:
+                    args:
+                      description: Args is passed to the container command.
+                      items:
+                        type: string
+                      type: array
+                    command:
+                      description: Command overrides the container entrypoint.
+                      items:
+                        type: string
+                      type: array
+                    configs:
+                      description: Configs mounts ConfigMap keys as files inside this
+                        container.
+                      items:
+                        description: ConfigFile mounts a single key from a ConfigMap
+                          as a file inside the integration container.
+                        properties:
+                          configMapName:
+                            description: ConfigMapName is the name of the ConfigMap
+                              in the same namespace.
+                            type: string
+                          key:
+                            description: Key is the ConfigMap key to mount.
+                            type: string
+                          mountPath:
+                            description: MountPath is the absolute path inside the
+                              container where the file is placed.
+                            type: string
+                        required:
+                        - configMapName
+                        - key
+                        - mountPath
+                        type: object
+                      type: array
+                    env:
+                      description: Env provides additional environment variables,
+                        merged after ADB_ADDRESS/INSTANCE_INDEX.
+                      items:
+                        description: EnvVar represents an environment variable present
+                          in a Container.
+                        properties:
+                          name:
+                            description: Name of the environment variable. Must be
+                              a C_IDENTIFIER.
+                            type: string
+                          value:
+                            description: |-
+                              Variable references $(VAR_NAME) are expanded
+                              using the previously defined environment variables in the container and
+                              any service environment variables. If a variable cannot be resolved,
+                              the reference in the input string will be unchanged. Double $$ are reduced
+                              to a single $, which allows for escaping the $(VAR_NAME) syntax: i.e.
+                              "$$(VAR_NAME)" will produce the string literal "$(VAR_NAME)".
+                              Escaped references will never be expanded, regardless of whether the variable
+                              exists or not.
+                              Defaults to "".
+                            type: string
+                          valueFrom:
+                            description: Source for the environment variable's value.
+                              Cannot be used if value is not empty.
+                            properties:
+                              configMapKeyRef:
+                                description: Selects a key of a ConfigMap.
+                                properties:
+                                  key:
+                                    description: The key to select.
+                                    type: string
+                                  name:
+                                    description: |-
+                                      Name of the referent.
+                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                    type: string
+                                  optional:
+                                    description: Specify whether the ConfigMap or
+                                      its key must be defined
+                                    type: boolean
+                                required:
+                                - key
+                                type: object
+                                x-kubernetes-map-type: atomic
+                              fieldRef:
+                                description: |-
+                                  Selects a field of the pod: supports metadata.name, metadata.namespace, `metadata.labels['<KEY>']`, `metadata.annotations['<KEY>']`,
+                                  spec.nodeName, spec.serviceAccountName, status.hostIP, status.podIP, status.podIPs.
+                                properties:
+                                  apiVersion:
+                                    description: Version of the schema the FieldPath
+                                      is written in terms of, defaults to "v1".
+                                    type: string
+                                  fieldPath:
+                                    description: Path of the field to select in the
+                                      specified API version.
+                                    type: string
+                                required:
+                                - fieldPath
+                                type: object
+                                x-kubernetes-map-type: atomic
+                              resourceFieldRef:
+                                description: |-
+                                  Selects a resource of the container: only resources limits and requests
+                                  (limits.cpu, limits.memory, limits.ephemeral-storage, requests.cpu, requests.memory and requests.ephemeral-storage) are currently supported.
+                                properties:
+                                  containerName:
+                                    description: 'Container name: required for volumes,
+                                      optional for env vars'
+                                    type: string
+                                  divisor:
+                                    anyOf:
+                                    - type: integer
+                                    - type: string
+                                    description: Specifies the output format of the
+                                      exposed resources, defaults to "1"
+                                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                                    x-kubernetes-int-or-string: true
+                                  resource:
+                                    description: 'Required: resource to select'
+                                    type: string
+                                required:
+                                - resource
+                                type: object
+                                x-kubernetes-map-type: atomic
+                              secretKeyRef:
+                                description: Selects a key of a secret in the pod's
+                                  namespace
+                                properties:
+                                  key:
+                                    description: The key of the secret to select from.  Must
+                                      be a valid secret key.
+                                    type: string
+                                  name:
+                                    description: |-
+                                      Name of the referent.
+                                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                                    type: string
+                                  optional:
+                                    description: Specify whether the Secret or its
+                                      key must be defined
+                                    type: boolean
+                                required:
+                                - key
+                                type: object
+                                x-kubernetes-map-type: atomic
+                            type: object
+                        required:
+                        - name
+                        type: object
+                      type: array
+                    image:
+                      description: Image is the container image for this tool.
+                      type: string
+                    imagePullPolicy:
+                      default: Always
+                      description: ImagePullPolicy overrides the image pull policy.
+                        Defaults to Always.
+                      type: string
+                    name:
+                      description: Name is a unique identifier for this integration
+                        within the task.
+                      type: string
+                    resources:
+                      description: Resources optionally sets CPU/memory limits on
+                        this container.
+                      properties:
+                        claims:
+                          description: |-
+                            Claims lists the names of resources, defined in spec.resourceClaims,
+                            that are used by this container.
+
+                            This is an alpha field and requires enabling the
+                            DynamicResourceAllocation feature gate.
+
+                            This field is immutable. It can only be set for containers.
+                          items:
+                            description: ResourceClaim references one entry in PodSpec.ResourceClaims.
+                            properties:
+                              name:
+                                description: |-
+                                  Name must match the name of one entry in pod.spec.resourceClaims of
+                                  the Pod where this field is used. It makes that resource available
+                                  inside a container.
+                                type: string
+                            required:
+                            - name
+                            type: object
+                          type: array
+                          x-kubernetes-list-map-keys:
+                          - name
+                          x-kubernetes-list-type: map
+                        limits:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: |-
+                            Limits describes the maximum amount of compute resources allowed.
+                            More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                          type: object
+                        requests:
+                          additionalProperties:
+                            anyOf:
+                            - type: integer
+                            - type: string
+                            pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                            x-kubernetes-int-or-string: true
+                          description: |-
+                            Requests describes the minimum amount of compute resources required.
+                            If Requests is omitted for a container, it defaults to Limits if that is explicitly specified,
+                            otherwise to an implementation-defined value. Requests cannot exceed Limits.
+                            More info: https://kubernetes.io/docs/concepts/configuration/manage-resources-containers/
+                          type: object
+                      type: object
+                    securityContext:
+                      description: SecurityContext sets per-container security options.
+                      properties:
+                        allowPrivilegeEscalation:
+                          description: |-
+                            AllowPrivilegeEscalation controls whether a process can gain more
+                            privileges than its parent process. This bool directly controls if
+                            the no_new_privs flag will be set on the container process.
+                            AllowPrivilegeEscalation is true always when the container is:
+                            1) run as Privileged
+                            2) has CAP_SYS_ADMIN
+                            Note that this field cannot be set when spec.os.name is windows.
+                          type: boolean
+                        capabilities:
+                          description: |-
+                            The capabilities to add/drop when running containers.
+                            Defaults to the default set of capabilities granted by the container runtime.
+                            Note that this field cannot be set when spec.os.name is windows.
+                          properties:
+                            add:
+                              description: Added capabilities
+                              items:
+                                description: Capability represent POSIX capabilities
+                                  type
+                                type: string
+                              type: array
+                            drop:
+                              description: Removed capabilities
+                              items:
+                                description: Capability represent POSIX capabilities
+                                  type
+                                type: string
+                              type: array
+                          type: object
+                        privileged:
+                          description: |-
+                            Run container in privileged mode.
+                            Processes in privileged containers are essentially equivalent to root on the host.
+                            Defaults to false.
+                            Note that this field cannot be set when spec.os.name is windows.
+                          type: boolean
+                        procMount:
+                          description: |-
+                            procMount denotes the type of proc mount to use for the containers.
+                            The default is DefaultProcMount which uses the container runtime defaults for
+                            readonly paths and masked paths.
+                            This requires the ProcMountType feature flag to be enabled.
+                            Note that this field cannot be set when spec.os.name is windows.
+                          type: string
+                        readOnlyRootFilesystem:
+                          description: |-
+                            Whether this container has a read-only root filesystem.
+                            Default is false.
+                            Note that this field cannot be set when spec.os.name is windows.
+                          type: boolean
+                        runAsGroup:
+                          description: |-
+                            The GID to run the entrypoint of the container process.
+                            Uses runtime default if unset.
+                            May also be set in PodSecurityContext.  If set in both SecurityContext and
+                            PodSecurityContext, the value specified in SecurityContext takes precedence.
+                            Note that this field cannot be set when spec.os.name is windows.
+                          format: int64
+                          type: integer
+                        runAsNonRoot:
+                          description: |-
+                            Indicates that the container must run as a non-root user.
+                            If true, the Kubelet will validate the image at runtime to ensure that it
+                            does not run as UID 0 (root) and fail to start the container if it does.
+                            If unset or false, no such validation will be performed.
+                            May also be set in PodSecurityContext.  If set in both SecurityContext and
+                            PodSecurityContext, the value specified in SecurityContext takes precedence.
+                          type: boolean
+                        runAsUser:
+                          description: |-
+                            The UID to run the entrypoint of the container process.
+                            Defaults to user specified in image metadata if unspecified.
+                            May also be set in PodSecurityContext.  If set in both SecurityContext and
+                            PodSecurityContext, the value specified in SecurityContext takes precedence.
+                            Note that this field cannot be set when spec.os.name is windows.
+                          format: int64
+                          type: integer
+                        seLinuxOptions:
+                          description: |-
+                            The SELinux context to be applied to the container.
+                            If unspecified, the container runtime will allocate a random SELinux context for each
+                            container.  May also be set in PodSecurityContext.  If set in both SecurityContext and
+                            PodSecurityContext, the value specified in SecurityContext takes precedence.
+                            Note that this field cannot be set when spec.os.name is windows.
+                          properties:
+                            level:
+                              description: Level is SELinux level label that applies
+                                to the container.
+                              type: string
+                            role:
+                              description: Role is a SELinux role label that applies
+                                to the container.
+                              type: string
+                            type:
+                              description: Type is a SELinux type label that applies
+                                to the container.
+                              type: string
+                            user:
+                              description: User is a SELinux user label that applies
+                                to the container.
+                              type: string
+                          type: object
+                        seccompProfile:
+                          description: |-
+                            The seccomp options to use by this container. If seccomp options are
+                            provided at both the pod & container level, the container options
+                            override the pod options.
+                            Note that this field cannot be set when spec.os.name is windows.
+                          properties:
+                            localhostProfile:
+                              description: |-
+                                localhostProfile indicates a profile defined in a file on the node should be used.
+                                The profile must be preconfigured on the node to work.
+                                Must be a descending path, relative to the kubelet's configured seccomp profile location.
+                                Must be set if type is "Localhost". Must NOT be set for any other type.
+                              type: string
+                            type:
+                              description: |-
+                                type indicates which kind of seccomp profile will be applied.
+                                Valid options are:
+
+                                Localhost - a profile defined in a file on the node should be used.
+                                RuntimeDefault - the container runtime default profile should be used.
+                                Unconfined - no profile should be applied.
+                              type: string
+                          required:
+                          - type
+                          type: object
+                        windowsOptions:
+                          description: |-
+                            The Windows specific settings applied to all containers.
+                            If unspecified, the options from the PodSecurityContext will be used.
+                            If set in both SecurityContext and PodSecurityContext, the value specified in SecurityContext takes precedence.
+                            Note that this field cannot be set when spec.os.name is linux.
+                          properties:
+                            gmsaCredentialSpec:
+                              description: |-
+                                GMSACredentialSpec is where the GMSA admission webhook
+                                (https://github.com/kubernetes-sigs/windows-gmsa) inlines the contents of the
+                                GMSA credential spec named by the GMSACredentialSpecName field.
+                              type: string
+                            gmsaCredentialSpecName:
+                              description: GMSACredentialSpecName is the name of the
+                                GMSA credential spec to use.
+                              type: string
+                            hostProcess:
+                              description: |-
+                                HostProcess determines if a container should be run as a 'Host Process' container.
+                                All of a Pod's containers must have the same effective HostProcess value
+                                (it is not allowed to have a mix of HostProcess containers and non-HostProcess containers).
+                                In addition, if HostProcess is true then HostNetwork must also be set to true.
+                              type: boolean
+                            runAsUserName:
+                              description: |-
+                                The UserName in Windows to run the entrypoint of the container process.
+                                Defaults to the user specified in image metadata if unspecified.
+                                May also be set in PodSecurityContext. If set in both SecurityContext and
+                                PodSecurityContext, the value specified in SecurityContext takes precedence.
+                              type: string
+                          type: object
+                      type: object
+                    serviceAccountName:
+                      description: |-
+                        ServiceAccountName is the ServiceAccount whose token is mounted into this container.
+                        Required when the integration needs to call the Kubernetes API (e.g. to patch
+                        status.suspended on other RedroidInstances). Defaults to the namespace default SA.
+                      type: string
+                    volumeMounts:
+                      description: VolumeMounts adds extra volume mounts into the
+                        integration container.
+                      items:
+                        description: VolumeMount describes a mounting of a Volume
+                          within a container.
+                        properties:
+                          mountPath:
+                            description: |-
+                              Path within the container at which the volume should be mounted.  Must
+                              not contain ':'.
+                            type: string
+                          mountPropagation:
+                            description: |-
+                              mountPropagation determines how mounts are propagated from the host
+                              to container and the other way around.
+                              When not set, MountPropagationNone is used.
+                              This field is beta in 1.10.
+                            type: string
+                          name:
+                            description: This must match the Name of a Volume.
+                            type: string
+                          readOnly:
+                            description: |-
+                              Mounted read-only if true, read-write otherwise (false or unspecified).
+                              Defaults to false.
+                            type: boolean
+                          subPath:
+                            description: |-
+                              Path within the volume from which the container's volume should be mounted.
+                              Defaults to "" (volume's root).
+                            type: string
+                          subPathExpr:
+                            description: |-
+                              Expanded path within the volume from which the container's volume should be mounted.
+                              Behaves similarly to SubPath but environment variable references $(VAR_NAME) are expanded using the container's environment.
+                              Defaults to "" (volume's root).
+                              SubPathExpr and SubPath are mutually exclusive.
+                            type: string
+                        required:
+                        - mountPath
+                        - name
+                        type: object
+                      type: array
+                    workingDir:
+                      description: WorkingDir sets the current working directory inside
+                        the container.
+                      type: string
+                  required:
+                  - image
+                  - name
+                  type: object
+                minItems: 1
+                type: array
+              parallelism:
+                description: |-
+                  Parallelism controls how many instance Pods run concurrently.
+                  Defaults to the number of Instances (run all in parallel).
+                format: int32
+                minimum: 1
+                type: integer
+              schedule:
+                description: |-
+                  Schedule is a Cron expression for recurring execution (e.g. "0 4 * * *").
+                  If empty, the task is one-shot and runs immediately upon creation.
+                type: string
+              startingDeadlineSeconds:
+                description: |-
+                  StartingDeadlineSeconds is the optional deadline (seconds) for starting a CronJob
+                  if it misses scheduled time. Ignored for one-shot tasks.
+                format: int64
+                minimum: 0
+                type: integer
+              successfulJobsHistoryLimit:
+                default: 3
+                description: SuccessfulJobsHistoryLimit controls how many successful
+                  CronJob-spawned Jobs to retain. Defaults to 3.
+                format: int32
+                minimum: 0
+                type: integer
+              suspend:
+                description: |-
+                  Suspend pauses CronJob execution without deleting it. Ignored for one-shot tasks.
+                  Follows the same semantics as CronJob.spec.suspend.
+                type: boolean
+              suspendInstance:
+                description: |-
+                  SuspendInstance temporarily stops the referenced RedroidInstance Pod while the
+                  one-shot Job runs, then automatically restores it on Job completion/failure.
+                  This prevents overlayfs conflicts when both the instance Pod and the task Job
+                  would otherwise write to the same /data-diff volume simultaneously.
+
+                  Mechanism: the task controller sets status.suspended on each instance
+                  before creating the Job, waits until the instance Pod is stopped (phase=Stopped),
+                  then creates the Job. After the Job finishes the controller clears the field.
+
+                  This field is ignored for CronJob-based (scheduled) tasks.
+                type: boolean
+              timezone:
+                description: |-
+                  Timezone is the IANA timezone name for the CronJob schedule (e.g. "Asia/Shanghai").
+                  Requires Kubernetes >= 1.27. Ignored for one-shot tasks.
+                type: string
+              ttlSecondsAfterFinished:
+                description: |-
+                  TTLSecondsAfterFinished automatically removes completed one-shot Jobs after
+                  this many seconds. Ignored for scheduled tasks.
+                format: int32
+                minimum: 0
+                type: integer
+            required:
+            - instances
+            - integrations
+            type: object
+          status:
+            description: RedroidTaskStatus defines the observed state of RedroidTask.
+            properties:
+              activeJobs:
+                description: ActiveJobs lists the names of currently running Jobs.
+                items:
+                  type: string
+                type: array
+              conditions:
+                description: Conditions holds detailed status conditions (Active,
+                  Complete, Failed).
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+                x-kubernetes-list-map-keys:
+                - type
+                x-kubernetes-list-type: map
+              lastScheduleTime:
+                description: LastScheduleTime is the last time the CronJob was scheduled.
+                format: date-time
+                type: string
+              lastSuccessfulTime:
+                description: LastSuccessfulTime is the last time a Job completed successfully.
+                format: date-time
+                type: string
+              observedGeneration:
+                description: ObservedGeneration is the most recent generation observed
+                  by the controller.
+                format: int64
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

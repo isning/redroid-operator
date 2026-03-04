@@ -1,0 +1,34 @@
+version: "2"
+
+linters:
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - misspell
+    - revive
+    - unconvert
+    - unparam
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: false
+
+  exclusions:
+    generated: lax
+    presets:
+      - comments
+    rules:
+      # Allow unused params in reconcile helpers (interface requirement).
+      - path: _test\.go
+        linters:
+          - unparam
+    paths:
+      - zz_generated_deepcopy\.go
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

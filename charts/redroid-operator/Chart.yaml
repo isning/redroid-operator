@@ -1,0 +1,17 @@
+apiVersion: v2
+name: redroid-operator
+description: Kubernetes operator for managing Redroid Android container instances
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/isning/redroid-operator
+sources:
+  - https://github.com/isning/redroid-operator
+keywords:
+  - android
+  - redroid
+  - operator
+  - kubernetes
+maintainers:
+  - name: isning
+    url: https://github.com/isning

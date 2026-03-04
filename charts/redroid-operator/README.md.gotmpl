@@ -1,0 +1,31 @@
+{{ template "chart.header" . }}
+{{ template "chart.deprecationWarning" . }}
+{{ template "chart.badgesSection" . }}
+
+{{ template "chart.description" . }}
+
+## Usage
+
+```bash
+helm repo add redroid https://isning.github.io/redroid-operator
+helm repo update
+helm install redroid-operator redroid/redroid-operator \
+  --namespace redroid-system --create-namespace
+```
+
+Or via OCI:
+
+```bash
+helm install redroid-operator \
+  oci://ghcr.io/isning/charts/redroid-operator \
+  --version {{ template "chart.version" . }} \
+  --namespace redroid-system --create-namespace
+```
+
+{{ template "chart.requirementsSection" . }}
+
+{{ template "chart.valuesSection" . }}
+
+{{ template "chart.sourcesSection" . }}
+
+{{ template "chart.maintainersSection" . }}

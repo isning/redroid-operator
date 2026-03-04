@@ -1,0 +1,104 @@
+name: Docs
+
+# Build and publish documentation to gh-pages on every push to main.
+# Publishes to https://isning.github.io/redroid-operator/docs/
+# (alongside the Helm repo index.yaml at the root).
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'api/**'
+      - 'docs/**'
+      - 'charts/redroid-operator/values.yaml'
+      - 'charts/redroid-operator/Chart.yaml'
+      - 'charts/redroid-operator/README.md.gotmpl'
+      - '.github/workflows/docs.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Generate and publish docs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: stable
+          cache: true
+
+      # ── Install doc tools ─────────────────────────────────────────────────
+      - name: Install controller-gen (for make manifests)
+        run: go install sigs.k8s.io/controller-tools/cmd/controller-gen@v0.17.0
+
+      - name: Install crdoc
+        run: go install fybrik.io/crdoc@latest
+
+      - name: Install helm-docs
+        run: |
+          HV=$(curl -s https://api.github.com/repos/norwoodj/helm-docs/releases/latest \
+            | jq -r '.tag_name' | sed 's/^v//')
+          curl -sL "https://github.com/norwoodj/helm-docs/releases/download/v${HV}/helm-docs_${HV}_Linux_x86_64.tar.gz" \
+            | tar xz helm-docs
+          sudo install helm-docs /usr/local/bin/
+
+      # ── Generate ──────────────────────────────────────────────────────────
+      - name: Generate CRDs
+        run: make manifests
+
+      - name: Generate CRD reference (crdoc)
+        run: |
+          mkdir -p docs/generated
+          crdoc \
+            --resources config/crd/bases/ \
+            --output docs/generated/crd-reference.md
+
+      - name: Generate Helm chart README (helm-docs)
+        run: helm-docs --chart-search-root charts/
+
+      # ── Publish to gh-pages ───────────────────────────────────────────────
+      - name: Configure git
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Push docs to gh-pages
+        run: |
+          git fetch origin gh-pages || true
+
+          if git show-ref --verify --quiet refs/remotes/origin/gh-pages; then
+            git worktree add /tmp/gh-pages origin/gh-pages
+          else
+            git worktree add --detach /tmp/gh-pages HEAD
+            cd /tmp/gh-pages
+            git checkout --orphan gh-pages
+            git reset --hard
+            echo "# redroid-operator Helm Repository" > README.md
+            git add README.md
+            git commit -m "chore: initialize gh-pages"
+            cd -
+          fi
+
+          # Sync generated docs/ into gh-pages/docs/
+          mkdir -p /tmp/gh-pages/docs/generated
+          cp -r docs/generated/. /tmp/gh-pages/docs/generated/
+          # Also sync the hand-written docs
+          cp docs/*.md /tmp/gh-pages/docs/
+
+          # Update Helm chart README (in-repo, commit back to main via PR is done
+          # separately; here we just stage it for gh-pages reference)
+          if [[ -f charts/redroid-operator/README.md ]]; then
+            mkdir -p /tmp/gh-pages/docs/helm
+            cp charts/redroid-operator/README.md /tmp/gh-pages/docs/helm/chart-values.md
+          fi
+
+          cd /tmp/gh-pages
+          git add docs/
+          git diff --staged --quiet && { echo "No doc changes."; exit 0; }
+          git commit -m "docs: update generated reference $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push origin HEAD:gh-pages
