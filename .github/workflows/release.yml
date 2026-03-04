@@ -223,6 +223,9 @@ jobs:
     needs: [publish]   # run after GitHub Release is live so tgz URLs are valid
     permissions:
       contents: write
+    concurrency:
+      group: gh-pages
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v6
         with:
