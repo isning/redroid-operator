@@ -22,7 +22,7 @@ Required tools:
 
 | Tool | Version | Purpose |
 |---|---|---|
-| Go | ≥ 1.22 | Build and test |
+| Go | ≥ 1.24 | Build and test |
 | `controller-gen` | v0.17.0 | CRD / RBAC generation |
 | `kustomize` | any | YAML generation |
 | `helm` | ≥ 3.8 | Chart linting / packaging |
