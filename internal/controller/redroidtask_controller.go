@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -58,9 +59,11 @@ sleep 30
 // +kubebuilder:rbac:groups=redroid.isning.moe,resources=redroidinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch,resources=jobs;cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 type RedroidTaskReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // Reconcile reconciles a RedroidTask object.
@@ -155,6 +158,7 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 					); setErr != nil {
 						return ctrl.Result{}, setErr
 					}
+					r.Recorder.Eventf(task, corev1.EventTypeNormal, "SuspendedInstance", "Suspended instance %s for task %s", inst.Name, task.Name)
 					logger.Info("set suspended on instance; waiting for Pod to stop",
 						"instance", inst.Name)
 					requeueAfter = 5 * time.Second
@@ -174,6 +178,7 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 					); setErr != nil {
 						return ctrl.Result{}, setErr
 					}
+					r.Recorder.Eventf(task, corev1.EventTypeNormal, "WokenInstance", "Woken instance %s for task %s", inst.Name, task.Name)
 					logger.Info("set woken on instance; waiting for Pod to start",
 						"instance", inst.Name)
 					requeueAfter = 5 * time.Second
@@ -192,8 +197,10 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 				return ctrl.Result{}, err
 			}
 			if err := r.Create(ctx, newJob); err != nil {
+				r.Recorder.Eventf(task, corev1.EventTypeWarning, "FailedCreateJob", "Failed to create Job %s: %v", jobName, err)
 				return ctrl.Result{}, fmt.Errorf("create job %s: %w", jobName, err)
 			}
+			r.Recorder.Eventf(task, corev1.EventTypeNormal, "CreatedJob", "Created Job %s", jobName)
 			activeJobs = append(activeJobs, jobName)
 			continue
 		}
@@ -209,6 +216,7 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 				if clrErr := r.clearInstanceSuspended(ctx, inst); clrErr != nil {
 					return ctrl.Result{}, clrErr
 				}
+				r.Recorder.Eventf(task, corev1.EventTypeNormal, "ClearedSuspendedInstance", "Cleared suspended on instance %s", inst.Name)
 				logger.Info("cleared suspended after Job completion",
 					"instance", inst.Name, "job", jobName)
 			}
@@ -216,6 +224,7 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 				if clrErr := r.clearInstanceWoken(ctx, inst); clrErr != nil {
 					return ctrl.Result{}, clrErr
 				}
+				r.Recorder.Eventf(task, corev1.EventTypeNormal, "ClearedWokenInstance", "Cleared woken on instance %s", inst.Name)
 				logger.Info("cleared woken after Job completion",
 					"instance", inst.Name, "job", jobName)
 			}
@@ -302,8 +311,10 @@ func (r *RedroidTaskReconciler) reconcileCronJobs(
 		if apierrors.IsNotFound(err) {
 			logger.Info("creating CronJob for instance", "cronjob", cronName, "instance", inst.Name)
 			if err := r.Create(ctx, desired); err != nil {
+				r.Recorder.Eventf(task, corev1.EventTypeWarning, "FailedCreateCronJob", "Failed to create CronJob %s: %v", cronName, err)
 				return ctrl.Result{}, fmt.Errorf("create cronjob %s: %w", cronName, err)
 			}
+			r.Recorder.Eventf(task, corev1.EventTypeNormal, "CreatedCronJob", "Created CronJob %s", cronName)
 			continue
 		}
 		if err != nil {

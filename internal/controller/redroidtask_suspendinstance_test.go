@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	redroidv1alpha1 "github.com/isning/redroid-operator/api/v1alpha1"
@@ -53,7 +54,7 @@ var _ = Describe("RedroidTask SuspendInstance", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 			WithObjects(inst, task).Build()
 
-		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 
 		// 1st reconcile: adds finalizer.
 		reconcileTask(r, "task-sus")
@@ -89,7 +90,7 @@ var _ = Describe("RedroidTask SuspendInstance", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 			WithObjects(inst, task).Build()
 
-		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileTask(r, "task-waits") // add finalizer
 
 		res := reconcileTask(r, "task-waits") // should requeue, no job
@@ -113,7 +114,7 @@ var _ = Describe("RedroidTask SuspendInstance", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 			WithObjects(inst, task).Build()
 
-		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileTask(r, "task-ready") // add finalizer
 		reconcileTask(r, "task-ready") // create Job
 
@@ -160,7 +161,7 @@ var _ = Describe("RedroidTask SuspendInstance", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 			WithObjects(inst, task, finishedJob).Build()
 
-		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileTask(r, "task-done") // add finalizer
 		reconcileTask(r, "task-done") // detect finished job → clear suspended
 

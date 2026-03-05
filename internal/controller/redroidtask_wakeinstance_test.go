@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	redroidv1alpha1 "github.com/isning/redroid-operator/api/v1alpha1"
@@ -59,7 +60,7 @@ var _ = Describe("RedroidTask WakeInstance", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 			WithObjects(inst, task).Build()
 
-		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 
 		// 1st reconcile: adds finalizer.
 		reconcileTask(r, "task-wk")
@@ -95,7 +96,7 @@ var _ = Describe("RedroidTask WakeInstance", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 			WithObjects(inst, task).Build()
 
-		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileTask(r, "task-wkwait") // add finalizer
 
 		res := reconcileTask(r, "task-wkwait") // should requeue, no job
@@ -120,7 +121,7 @@ var _ = Describe("RedroidTask WakeInstance", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 			WithObjects(inst, task).Build()
 
-		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileTask(r, "task-wkready") // add finalizer
 		reconcileTask(r, "task-wkready") // create Job
 
@@ -167,7 +168,7 @@ var _ = Describe("RedroidTask WakeInstance", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 			WithObjects(inst, task, finishedJob).Build()
 
-		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileTask(r, "task-wkdone") // add finalizer
 		reconcileTask(r, "task-wkdone") // detect finished job → clear woken
 

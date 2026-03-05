@@ -10,6 +10,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -43,9 +44,11 @@ const (
 // +kubebuilder:rbac:groups="",resources=pods/portforward,verbs=create
 // +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
 // +kubebuilder:rbac:groups="",resources=services,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups="",resources=events,verbs=create;patch
 type RedroidInstanceReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme   *runtime.Scheme
+	Recorder record.EventRecorder
 }
 
 // Reconcile reconciles a RedroidInstance object.
@@ -94,6 +97,7 @@ func (r *RedroidInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return ctrl.Result{}, fmt.Errorf("clear expired woken: %w", err)
 		}
 		logger.Info("cleared expired woken", "instance", instance.Name)
+		r.Recorder.Event(instance, corev1.EventTypeNormal, "WokenExpired", "Cleared expired programmatic wake override")
 	}
 
 	// Auto-clear expired Suspended before making scheduling decisions.
@@ -104,6 +108,7 @@ func (r *RedroidInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return ctrl.Result{}, fmt.Errorf("clear expired suspended: %w", err)
 		}
 		logger.Info("cleared expired suspended", "instance", instance.Name)
+		r.Recorder.Event(instance, corev1.EventTypeNormal, "SuspendedExpired", "Cleared expired programmatic suspend override")
 	}
 
 	if !desiredRunning(instance) {
@@ -111,6 +116,8 @@ func (r *RedroidInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if err := r.deleteInstancePod(ctx, instance); err != nil {
 			return ctrl.Result{}, err
 		}
+		// The event for PodDeleted is handled inside deleteInstancePod if a
+		// Pod actually existed to be deleted.
 		return r.updateStatus(ctx, instance, redroidv1alpha1.RedroidInstanceStopped, podName, "", nil)
 	}
 
@@ -124,8 +131,10 @@ func (r *RedroidInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 			return ctrl.Result{}, err
 		}
 		if err := r.Create(ctx, pod); err != nil {
+			r.Recorder.Eventf(instance, corev1.EventTypeWarning, "FailedCreatePod", "Failed to create Pod %s: %v", podName, err)
 			return ctrl.Result{}, fmt.Errorf("create pod: %w", err)
 		}
+		r.Recorder.Eventf(instance, corev1.EventTypeNormal, "CreatedPod", "Created Pod %s", podName)
 		return r.updateStatus(ctx, instance, redroidv1alpha1.RedroidInstancePending, podName, "", nil)
 	}
 	if err != nil {
@@ -164,7 +173,11 @@ func (r *RedroidInstanceReconciler) deleteInstancePod(ctx context.Context, insta
 	if err != nil {
 		return err
 	}
-	return client.IgnoreNotFound(r.Delete(ctx, pod))
+	if err := r.Delete(ctx, pod); client.IgnoreNotFound(err) != nil {
+		return err
+	}
+	r.Recorder.Eventf(instance, corev1.EventTypeNormal, "DeletedPod", "Deleted Pod %s", pod.Name)
+	return nil
 }
 
 // podFailureDetails extracts a human-readable failure summary from a Pod's
@@ -209,6 +222,8 @@ func (r *RedroidInstanceReconciler) updateStatus(
 	podName, adbAddr string,
 	pod *corev1.Pod,
 ) (ctrl.Result, error) {
+	oldPhase := instance.Status.Phase
+
 	patch := client.MergeFrom(instance.DeepCopy())
 	instance.Status.ObservedGeneration = instance.Generation
 	instance.Status.Phase = phase
@@ -224,6 +239,9 @@ func (r *RedroidInstanceReconciler) updateStatus(
 			readyStatus = metav1.ConditionTrue
 			readyReason = "Running"
 			readyMsg = fmt.Sprintf("Pod %q is running; ADB available at %s.", podName, adbAddr)
+			if oldPhase != phase {
+				r.Recorder.Eventf(instance, corev1.EventTypeNormal, "InstanceReady", "ADB port is available at %s", adbAddr)
+			}
 		} else {
 			readyReason = "PodRunningNoADB"
 			readyMsg = fmt.Sprintf("Pod %q is running, but its IP address is not yet available.", podName)
@@ -248,6 +266,9 @@ func (r *RedroidInstanceReconciler) updateStatus(
 			readyMsg = fmt.Sprintf("Pod %q failed: %s", podName, details)
 		} else {
 			readyMsg = fmt.Sprintf("Pod %q has failed. Inspect pod events and logs for details.", podName)
+		}
+		if oldPhase != phase {
+			r.Recorder.Eventf(instance, corev1.EventTypeWarning, "InstanceFailed", readyMsg)
 		}
 	case redroidv1alpha1.RedroidInstancePending:
 		readyReason = "Pending"

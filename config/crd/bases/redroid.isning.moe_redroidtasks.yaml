@@ -1572,7 +1572,7 @@ spec:
                               user:
                                 description: |-
                                   user to map volume access to
-                                  Defaults to serviceaccount user
+                                  Defaults to serivceaccount user
                                 type: string
                               volume:
                                 description: volume is a string that references an
@@ -3769,7 +3769,7 @@ spec:
                         user:
                           description: |-
                             user to map volume access to
-                            Defaults to serviceaccount user
+                            Defaults to serivceaccount user
                           type: string
                         volume:
                           description: volume is a string that references an already
@@ -4065,7 +4065,8 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: suspendInstance and wakeInstance are mutually exclusive
-              rule: '!(has(self.suspendInstance) && self.suspendInstance == true && has(self.wakeInstance) && self.wakeInstance == true)'
+              rule: '!(has(self.suspendInstance) && self.suspendInstance == true &&
+                has(self.wakeInstance) && self.wakeInstance == true)'
           status:
             description: RedroidTaskStatus defines the observed state of RedroidTask.
             properties:

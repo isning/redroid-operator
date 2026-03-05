@@ -12,6 +12,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	redroidv1alpha1 "github.com/isning/redroid-operator/api/v1alpha1"
@@ -30,7 +31,7 @@ var _ = Describe("RedroidInstance TempSuspend", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 
 		// 1st reconcile: add finalizer.
 		reconcileInstance(r, "inst-tmpsus")
@@ -77,7 +78,7 @@ var _ = Describe("RedroidInstance TempSuspend", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileInstance(r, "inst-expiry") // add finalizer
 		reconcileInstance(r, "inst-expiry") // create Pod
 
@@ -117,7 +118,7 @@ var _ = Describe("RedroidInstance TempSuspend", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 
 		// Also set suspended.
 		fresh := &redroidv1alpha1.RedroidInstance{}

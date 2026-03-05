@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -128,7 +129,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-fin")
 
 			updated := &redroidv1alpha1.RedroidTask{}
@@ -146,9 +147,14 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst0, inst1, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-job")
 			reconcileTask(r, "task-job")
+
+			fakeRec := r.Recorder.(*record.FakeRecorder)
+			// Wait for two jobs to be created
+			Expect(fakeRec.Events).To(Receive(ContainSubstring("CreatedJob")))
+			Expect(fakeRec.Events).To(Receive(ContainSubstring("CreatedJob")))
 
 			jobList := &batchv1.JobList{}
 			err := fakeClient.List(context.Background(), jobList)
@@ -164,7 +170,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-spec")
 			reconcileTask(r, "task-spec")
 
@@ -197,7 +203,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-env")
 			reconcileTask(r, "task-env")
 
@@ -234,7 +240,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-cfg")
 			reconcileTask(r, "task-cfg")
 
@@ -273,9 +279,12 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-cron")
 			reconcileTask(r, "task-cron")
+
+			fakeRec := r.Recorder.(*record.FakeRecorder)
+			Expect(fakeRec.Events).To(Receive(ContainSubstring("CreatedCronJob")))
 
 			cronList := &batchv1.CronJobList{}
 			err := fakeClient.List(context.Background(), cronList)
@@ -292,7 +301,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-oneshot")
 			reconcileTask(r, "task-oneshot")
 
@@ -311,7 +320,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-suspend")
 			reconcileTask(r, "task-suspend")
 
@@ -332,7 +341,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-hist")
 			reconcileTask(r, "task-hist")
 
@@ -351,7 +360,7 @@ var _ = Describe("RedroidTask Controller", func() {
 			fakeClient = fake.NewClientBuilder().WithScheme(scheme).
 				WithStatusSubresource(&redroidv1alpha1.RedroidTask{}).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			_, err := r.Reconcile(context.Background(), ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "ghost", Namespace: "default"},
 			})
@@ -366,7 +375,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-ovl")
 			reconcileTask(r, "task-ovl")
 
@@ -416,7 +425,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-multi")
 			reconcileTask(r, "task-multi")
 
@@ -437,7 +446,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-concur")
 			reconcileTask(r, "task-concur")
 
@@ -456,7 +465,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 
 			// Reconcile once: controller adds "redroid.isning.moe/task-finalizer" then creates Job.
 			reconcileTask(r, "task-del")
@@ -488,7 +497,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			// The controller adds the finalizer and then immediately tries to resolve instances in the
 			// same Reconcile call. So the first call returns an error.
 			_, err := r.Reconcile(context.Background(), ctrl.Request{
@@ -505,7 +514,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-upd")
 			reconcileTask(r, "task-upd") // CronJob now exists
 
@@ -577,7 +586,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-inst-vol")
 			reconcileTask(r, "task-inst-vol")
 
@@ -632,7 +641,7 @@ var _ = Describe("RedroidTask Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
 				WithObjects(inst, task).Build()
 
-			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileTask(r, "task-inst-vol-cron")
 			reconcileTask(r, "task-inst-vol-cron")
 

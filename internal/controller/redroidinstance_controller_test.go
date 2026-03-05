@@ -9,6 +9,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
@@ -61,7 +62,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "test-0")
 
 			updated := &redroidv1alpha1.RedroidInstance{}
@@ -77,9 +78,12 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "inst-active") // adds finalizer
 			reconcileInstance(r, "inst-active") // creates Pod
+
+			fakeRec := r.Recorder.(*record.FakeRecorder)
+			Expect(fakeRec.Events).To(Receive(ContainSubstring("CreatedPod")))
 
 			podName := fmt.Sprintf("redroid-instance-%s", "inst-active")
 			pod := &corev1.Pod{}
@@ -100,7 +104,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "inst-suspended")
 			reconcileInstance(r, "inst-suspended")
 
@@ -116,7 +120,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "inst-toggle")
 			reconcileInstance(r, "inst-toggle")
 
@@ -132,7 +136,14 @@ var _ = Describe("RedroidInstance Controller", func() {
 			err = fakeClient.Update(context.Background(), updated)
 			Expect(err).NotTo(HaveOccurred())
 
+			fakeRec := r.Recorder.(*record.FakeRecorder)
+			for len(fakeRec.Events) > 0 {
+				<-fakeRec.Events
+			}
+
 			reconcileInstance(r, "inst-toggle")
+
+			Expect(fakeRec.Events).To(Receive(ContainSubstring("DeletedPod")))
 
 			err = fakeClient.Get(context.Background(), types.NamespacedName{Name: podName, Namespace: "default"}, &corev1.Pod{})
 			Expect(err).To(HaveOccurred(), "expected Pod to be deleted after suspend")
@@ -145,7 +156,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "inst-status")
 			reconcileInstance(r, "inst-status")
 
@@ -170,7 +181,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst, runningPod).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "inst-running")
 			reconcileInstance(r, "inst-running")
 
@@ -194,7 +205,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst, failedPod).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "inst-failed")
 			reconcileInstance(r, "inst-failed")
 
@@ -216,7 +227,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst, succeededPod).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "inst-succeeded")
 			reconcileInstance(r, "inst-succeeded")
 
@@ -234,7 +245,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "inst-args")
 			reconcileInstance(r, "inst-args")
 
@@ -262,7 +273,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "inst-vols")
 			reconcileInstance(r, "inst-vols")
 
@@ -285,7 +296,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			_, err := r.Reconcile(context.Background(), ctrl.Request{
 				NamespacedName: types.NamespacedName{Name: "does-not-exist", Namespace: "default"},
 			})
@@ -299,7 +310,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 
 			reconcileInstance(r, "del-0") // adds finalizer
 			reconcileInstance(r, "del-0") // creates Pod
@@ -337,7 +348,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst, pod).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "succ-0") // adds finalizer
 			reconcileInstance(r, "succ-0") // observes Succeeded Pod
 
@@ -354,7 +365,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "svc-test") // adds finalizer
 			reconcileInstance(r, "svc-test") // creates Pod + Service
 
@@ -376,7 +387,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "svc-suspended") // adds finalizer
 			reconcileInstance(r, "svc-suspended") // reconciles suspended path
 
@@ -401,7 +412,7 @@ var _ = Describe("RedroidInstance Controller", func() {
 				WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 				WithObjects(inst).Build()
 
-			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+			r = &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 			reconcileInstance(r, "svc-custom") // adds finalizer
 			reconcileInstance(r, "svc-custom") // creates Service
 

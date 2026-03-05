@@ -7,6 +7,7 @@ import (
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	redroidv1alpha1 "github.com/isning/redroid-operator/api/v1alpha1"
@@ -27,7 +28,7 @@ var _ = Describe("RedroidInstance Params", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileInstance(r, "inst-fps")
 		reconcileInstance(r, "inst-fps")
 
@@ -47,7 +48,7 @@ var _ = Describe("RedroidInstance Params", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileInstance(r, "inst-gpunode")
 		reconcileInstance(r, "inst-gpunode")
 
@@ -69,7 +70,7 @@ var _ = Describe("RedroidInstance Params", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileInstance(r, "inst-dns")
 		reconcileInstance(r, "inst-dns")
 
@@ -104,7 +105,7 @@ var _ = Describe("RedroidInstance Params", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileInstance(r, "inst-proxy")
 		reconcileInstance(r, "inst-proxy")
 
@@ -137,7 +138,7 @@ var _ = Describe("RedroidInstance Params", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileInstance(r, "inst-pac")
 		reconcileInstance(r, "inst-pac")
 
@@ -165,7 +166,7 @@ var _ = Describe("RedroidInstance Params", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileInstance(r, "inst-extraenv")
 		reconcileInstance(r, "inst-extraenv")
 
@@ -202,7 +203,7 @@ var _ = Describe("RedroidInstance Params", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileInstance(r, "inst-secretenv")
 		reconcileInstance(r, "inst-secretenv")
 
@@ -246,7 +247,7 @@ var _ = Describe("RedroidInstance Params", func() {
 			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
 			WithObjects(inst).Build()
 
-		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
 		reconcileInstance(r, "inst-cmenv")
 		reconcileInstance(r, "inst-cmenv")
 
