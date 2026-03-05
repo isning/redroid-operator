@@ -2858,6 +2858,8 @@ tool containers against a set of RedroidInstance overlay partitions.
         <td>object</td>
         <td>
           RedroidTaskSpec defines the desired state of RedroidTask.<br/>
+          <br/>
+            <i>Validations</i>:<li>!(self.suspendInstance == true && self.wakeInstance == true): suspendInstance and wakeInstance are mutually exclusive</li>
         </td>
         <td>false</td>
       </tr><tr>
@@ -2962,6 +2964,15 @@ Defaults to the number of Instances (run all in parallel).<br/>
         <td>
           Schedule is a Cron expression for recurring execution (e.g. "0 4 * * *").
 If empty, the task is one-shot and runs immediately upon creation.<br/>
+        </td>
+        <td>false</td>
+      </tr><tr>
+        <td><b>serviceAccountName</b></td>
+        <td>string</td>
+        <td>
+          ServiceAccountName is the name of the ServiceAccount to use for all Pods
+created by this task. Applies at the PodSpec level and is shared by every
+integration container. If empty, the namespace default ServiceAccount is used.<br/>
         </td>
         <td>false</td>
       </tr><tr>
@@ -3098,8 +3109,10 @@ mount instance-specific ConfigMaps, Secrets, etc.<br/>
         <td>[]object</td>
         <td>
           Volumes adds additional volumes specific to this instance's Job Pod.
-These are merged with task-level spec.volumes; instance volumes take
-precedence when names collide.<br/>
+These are merged with task-level spec.volumes; an instance volume overrides
+only user-defined task-level volumes with the same name. Reserved volumes
+(data-base, data-diff, dev-dri) and controller-generated ConfigMap volumes
+(cm-* prefix) are never overrideable — those retain precedence regardless.<br/>
         </td>
         <td>false</td>
       </tr></tbody>
@@ -6824,15 +6837,6 @@ ADB address is injected as ADB_ADDRESS env var; instance index as INSTANCE_INDEX
         <td>object</td>
         <td>
           SecurityContext sets per-container security options.<br/>
-        </td>
-        <td>false</td>
-      </tr><tr>
-        <td><b>serviceAccountName</b></td>
-        <td>string</td>
-        <td>
-          ServiceAccountName is the ServiceAccount whose token is mounted into this container.
-Required when the integration needs to call the Kubernetes API (e.g. to patch
-status.suspended on other RedroidInstances). Defaults to the namespace default SA.<br/>
         </td>
         <td>false</td>
       </tr><tr>
