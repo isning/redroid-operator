@@ -2859,7 +2859,7 @@ tool containers against a set of RedroidInstance overlay partitions.
         <td>
           RedroidTaskSpec defines the desired state of RedroidTask.<br/>
           <br/>
-            <i>Validations</i>:<li>!(self.suspendInstance == true && self.wakeInstance == true): suspendInstance and wakeInstance are mutually exclusive</li>
+            <i>Validations</i>:<li>!(has(self.suspendInstance) && self.suspendInstance == true && has(self.wakeInstance) && self.wakeInstance == true): suspendInstance and wakeInstance are mutually exclusive</li>
         </td>
         <td>false</td>
       </tr><tr>
@@ -6241,7 +6241,7 @@ Used with dynamically provisioned Quobyte volumes, value is set by the plugin<br
         <td>string</td>
         <td>
           user to map volume access to
-Defaults to serivceaccount user<br/>
+Defaults to serviceaccount user<br/>
         </td>
         <td>false</td>
       </tr></tbody>
@@ -10722,7 +10722,7 @@ Used with dynamically provisioned Quobyte volumes, value is set by the plugin<br
         <td>string</td>
         <td>
           user to map volume access to
-Defaults to serivceaccount user<br/>
+Defaults to serviceaccount user<br/>
         </td>
         <td>false</td>
       </tr></tbody>
