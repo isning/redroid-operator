@@ -182,11 +182,18 @@ jobs:
       contents: write
       packages: write
     steps:
-      - name: Download all build artifacts
+      - name: Download CLI artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: cli-*
           path: artifacts/
           merge-multiple: true
+
+      - name: Download Helm chart artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: helm-chart
+          path: artifacts/
 
       - name: Install crane
         uses: imjasonh/setup-crane@v0.4
