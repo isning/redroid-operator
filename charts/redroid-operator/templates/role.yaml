@@ -1,10 +1,15 @@
-{{- if and .Values.rbac.create (not .Values.watchNamespaces.enabled) -}}
+{{- $namespaces := .Values.watchNamespaces.namespaces -}}
+{{- if and .Values.rbac.create .Values.watchNamespaces.enabled -}}
+{{- /* One Role per watched namespace */ -}}
+{{- range $namespaces }}
+---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
+kind: Role
 metadata:
-  name: {{ include "redroid-operator.fullname" . }}-manager
+  name: {{ include "redroid-operator.fullname" $ }}-manager
+  namespace: {{ . }}
   labels:
-    {{- include "redroid-operator.labels" . | nindent 4 }}
+    {{- include "redroid-operator.labels" $ | nindent 4 }}
 rules:
   # RedroidInstance CRD
   - apiGroups: [redroid.isning.moe]
@@ -43,7 +48,19 @@ rules:
   - apiGroups: [batch]
     resources: [jobs, cronjobs]
     verbs: [get, list, watch, create, update, patch, delete]
-  # Leader election
+{{- end }}
+{{- end }}
+{{- if .Values.rbac.create }}
+---
+{{- /* Leader-election Role — always in the operator's own namespace */ -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "redroid-operator.fullname" . }}-leader-election
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "redroid-operator.labels" . | nindent 4 }}
+rules:
   - apiGroups: [coordination.k8s.io]
     resources: [leases]
     verbs: [get, create, update]

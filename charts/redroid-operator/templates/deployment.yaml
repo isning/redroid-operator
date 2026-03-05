@@ -39,6 +39,9 @@ spec:
             {{- if .Values.leaderElection }}
             - --leader-elect
             {{- end }}
+            {{- if .Values.watchNamespaces.enabled }}
+            - --watch-namespaces={{ join "," .Values.watchNamespaces.namespaces }}
+            {{- end }}
           ports:
             - containerPort: {{ .Values.metricsPort }}
               name: metrics

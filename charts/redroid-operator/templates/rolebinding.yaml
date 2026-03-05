@@ -1,0 +1,41 @@
+{{- $namespaces := .Values.watchNamespaces.namespaces -}}
+{{- if and .Values.rbac.create .Values.watchNamespaces.enabled -}}
+{{- /* One RoleBinding per watched namespace */ -}}
+{{- range $namespaces }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "redroid-operator.fullname" $ }}-manager
+  namespace: {{ . }}
+  labels:
+    {{- include "redroid-operator.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "redroid-operator.fullname" $ }}-manager
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "redroid-operator.serviceAccountName" $ }}
+    namespace: {{ $.Release.Namespace }}
+{{- end }}
+{{- end }}
+{{- if .Values.rbac.create }}
+---
+{{- /* Leader-election RoleBinding — always in the operator's own namespace */ -}}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "redroid-operator.fullname" . }}-leader-election
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "redroid-operator.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "redroid-operator.fullname" . }}-leader-election
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "redroid-operator.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}
