@@ -343,6 +343,113 @@ func (r *RedroidTaskReconciler) patchTaskStatus(
 	patch := client.MergeFrom(task.DeepCopy())
 	task.Status.ObservedGeneration = task.Generation
 	task.Status.ActiveJobs = activeJobs
+
+	// Active condition: one or more Jobs are currently running.
+	activeStatus := metav1.ConditionFalse
+	activeReason := "NoActiveJobs"
+	activeMsg := "No Jobs are currently running."
+	if len(activeJobs) > 0 {
+		activeStatus = metav1.ConditionTrue
+		activeReason = "JobsActive"
+		activeMsg = fmt.Sprintf("%d Job(s) running: %s.", len(activeJobs), strings.Join(activeJobs, ", "))
+	}
+	setCondition(&task.Status.Conditions, metav1.Condition{
+		Type:               string(redroidv1alpha1.RedroidTaskConditionActive),
+		Status:             activeStatus,
+		ObservedGeneration: task.Generation,
+		Reason:             activeReason,
+		Message:            activeMsg,
+	})
+
+	// For one-shot tasks, enumerate owned Jobs to derive Complete and Failed conditions.
+	// For scheduled tasks (CronJob-based), we set stable placeholder conditions.
+	completeStatus := metav1.ConditionFalse
+	completeReason := "NotComplete"
+	completeMsg := "Not all Jobs have completed successfully."
+
+	failedStatus := metav1.ConditionFalse
+	failedReason := "NoFailedJobs"
+	failedMsg := "No Jobs have failed."
+
+	if task.Spec.Schedule == "" {
+		// List all Jobs owned by this task.
+		var jobList batchv1.JobList
+		if err := r.List(ctx, &jobList,
+			client.InNamespace(task.Namespace),
+			client.MatchingLabels{"redroid.isning.moe/task": task.Name},
+		); err != nil {
+			return ctrl.Result{}, fmt.Errorf("list jobs for task status: %w", err)
+		}
+
+		expected := len(task.Spec.Instances)
+		succeeded := 0
+		var failedNames []string
+		var failedDetails []string
+
+		for i := range jobList.Items {
+			job := &jobList.Items[i]
+			for _, c := range job.Status.Conditions {
+				if c.Type == batchv1.JobComplete && c.Status == corev1.ConditionTrue {
+					succeeded++
+				}
+				if c.Type == batchv1.JobFailed && c.Status == corev1.ConditionTrue {
+					failedNames = append(failedNames, job.Name)
+					detail := fmt.Sprintf("job %q failed", job.Name)
+					if c.Reason != "" {
+						detail += fmt.Sprintf(" (reason: %s)", c.Reason)
+					}
+					if c.Message != "" {
+						detail += fmt.Sprintf(": %s", c.Message)
+					}
+					failedDetails = append(failedDetails, detail)
+				}
+			}
+		}
+
+		if len(failedNames) > 0 {
+			failedStatus = metav1.ConditionTrue
+			failedReason = "JobsFailed"
+			failedMsg = strings.Join(failedDetails, "; ")
+		}
+
+		if len(activeJobs) == 0 && len(failedNames) == 0 && succeeded >= expected && expected > 0 {
+			completeStatus = metav1.ConditionTrue
+			completeReason = "AllJobsSucceeded"
+			if task.Status.LastSuccessfulTime != nil {
+				completeMsg = fmt.Sprintf("All %d Job(s) completed successfully at %s.",
+					succeeded, task.Status.LastSuccessfulTime.Time.UTC().Format(time.RFC3339))
+			} else {
+				completeMsg = fmt.Sprintf("All %d Job(s) completed successfully.", succeeded)
+			}
+		} else if len(activeJobs) == 0 && len(failedNames) == 0 && expected > 0 {
+			completeMsg = fmt.Sprintf("%d/%d Job(s) have completed successfully.", succeeded, expected)
+		} else if expected > 0 {
+			completeMsg = fmt.Sprintf("%d/%d Job(s) have completed successfully; %d active.",
+				succeeded, expected, len(activeJobs))
+		}
+	} else {
+		// Scheduled task: conditions are not meaningful per-run; report stable state.
+		completeReason = "Scheduled"
+		completeMsg = "Task is CronJob-based; per-run completion is tracked via status.lastSuccessfulTime."
+		failedReason = "Scheduled"
+		failedMsg = "Task is CronJob-based; per-run failures are visible in the owned Job history."
+	}
+
+	setCondition(&task.Status.Conditions, metav1.Condition{
+		Type:               string(redroidv1alpha1.RedroidTaskConditionComplete),
+		Status:             completeStatus,
+		ObservedGeneration: task.Generation,
+		Reason:             completeReason,
+		Message:            completeMsg,
+	})
+	setCondition(&task.Status.Conditions, metav1.Condition{
+		Type:               string(redroidv1alpha1.RedroidTaskConditionFailed),
+		Status:             failedStatus,
+		ObservedGeneration: task.Generation,
+		Reason:             failedReason,
+		Message:            failedMsg,
+	})
+
 	return ctrl.Result{}, r.Status().Patch(ctx, task, patch)
 }
 

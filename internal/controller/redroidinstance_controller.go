@@ -111,7 +111,7 @@ func (r *RedroidInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if err := r.deleteInstancePod(ctx, instance); err != nil {
 			return ctrl.Result{}, err
 		}
-		return r.updateStatus(ctx, instance, redroidv1alpha1.RedroidInstanceStopped, podName, "")
+		return r.updateStatus(ctx, instance, redroidv1alpha1.RedroidInstanceStopped, podName, "", nil)
 	}
 
 	// Desired state: Pod running.
@@ -126,7 +126,7 @@ func (r *RedroidInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		if err := r.Create(ctx, pod); err != nil {
 			return ctrl.Result{}, fmt.Errorf("create pod: %w", err)
 		}
-		return r.updateStatus(ctx, instance, redroidv1alpha1.RedroidInstancePending, podName, "")
+		return r.updateStatus(ctx, instance, redroidv1alpha1.RedroidInstancePending, podName, "", nil)
 	}
 	if err != nil {
 		return ctrl.Result{}, err
@@ -149,7 +149,7 @@ func (r *RedroidInstanceReconciler) Reconcile(ctx context.Context, req ctrl.Requ
 		phase = redroidv1alpha1.RedroidInstanceStopped
 	}
 
-	return r.updateStatus(ctx, instance, phase, podName, adbAddr)
+	return r.updateStatus(ctx, instance, phase, podName, adbAddr, existingPod)
 }
 
 func (r *RedroidInstanceReconciler) deleteInstancePod(ctx context.Context, instance *redroidv1alpha1.RedroidInstance) error {
@@ -167,11 +167,47 @@ func (r *RedroidInstanceReconciler) deleteInstancePod(ctx context.Context, insta
 	return client.IgnoreNotFound(r.Delete(ctx, pod))
 }
 
+// podFailureDetails extracts a human-readable failure summary from a Pod's
+// container statuses. It returns an empty string when no failure information
+// is available (e.g. the Pod has not yet terminated).
+func podFailureDetails(pod *corev1.Pod) string {
+	if pod == nil {
+		return ""
+	}
+	var parts []string
+	for _, cs := range append(pod.Status.InitContainerStatuses, pod.Status.ContainerStatuses...) {
+		term := cs.State.Terminated
+		if term == nil || term.ExitCode == 0 {
+			continue
+		}
+		detail := fmt.Sprintf("container %q exited with code %d", cs.Name, term.ExitCode)
+		if term.Reason != "" {
+			detail += fmt.Sprintf(" (reason: %s)", term.Reason)
+		}
+		if term.Message != "" {
+			detail += fmt.Sprintf(": %s", term.Message)
+		}
+		parts = append(parts, detail)
+	}
+	if len(parts) == 0 {
+		if pod.Status.Message != "" {
+			return pod.Status.Message
+		}
+		return ""
+	}
+	result := parts[0]
+	for _, p := range parts[1:] {
+		result += "; " + p
+	}
+	return result
+}
+
 func (r *RedroidInstanceReconciler) updateStatus(
 	ctx context.Context,
 	instance *redroidv1alpha1.RedroidInstance,
 	phase redroidv1alpha1.RedroidInstancePhase,
 	podName, adbAddr string,
+	pod *corev1.Pod,
 ) (ctrl.Result, error) {
 	patch := client.MergeFrom(instance.DeepCopy())
 	instance.Status.ObservedGeneration = instance.Generation
@@ -181,31 +217,82 @@ func (r *RedroidInstanceReconciler) updateStatus(
 
 	// Sync Ready condition.
 	readyStatus := metav1.ConditionFalse
-	readyReason := string(phase)
-	if phase == redroidv1alpha1.RedroidInstanceRunning && adbAddr != "" {
-		readyStatus = metav1.ConditionTrue
-		readyReason = "Running"
+	var readyReason, readyMsg string
+	switch phase {
+	case redroidv1alpha1.RedroidInstanceRunning:
+		if adbAddr != "" {
+			readyStatus = metav1.ConditionTrue
+			readyReason = "Running"
+			readyMsg = fmt.Sprintf("Pod %q is running; ADB available at %s.", podName, adbAddr)
+		} else {
+			readyReason = "PodRunningNoADB"
+			readyMsg = fmt.Sprintf("Pod %q is running, but its IP address is not yet available.", podName)
+		}
+	case redroidv1alpha1.RedroidInstanceStopped:
+		readyReason = "Stopped"
+		if instance.Spec.Suspend {
+			readyMsg = "Instance is stopped because spec.suspend is true."
+		} else if instance.Status.Suspended != nil {
+			actor := instance.Status.Suspended.Actor
+			if actor == "" {
+				actor = "unknown"
+			}
+			readyMsg = fmt.Sprintf("Instance is temporarily suspended by %q (status.suspended).", actor)
+		} else {
+			readyMsg = "Instance is stopped."
+		}
+	case redroidv1alpha1.RedroidInstanceFailed:
+		readyReason = "PodFailed"
+		details := podFailureDetails(pod)
+		if details != "" {
+			readyMsg = fmt.Sprintf("Pod %q failed: %s", podName, details)
+		} else {
+			readyMsg = fmt.Sprintf("Pod %q has failed. Inspect pod events and logs for details.", podName)
+		}
+	case redroidv1alpha1.RedroidInstancePending:
+		readyReason = "Pending"
+		if podName != "" {
+			readyMsg = fmt.Sprintf("Pod %q is pending scheduling or startup.", podName)
+		} else {
+			readyMsg = "Pod is being created."
+		}
+	default:
+		readyReason = string(phase)
+		readyMsg = fmt.Sprintf("Instance phase is %s.", phase)
 	}
 	setCondition(&instance.Status.Conditions, metav1.Condition{
 		Type:               string(redroidv1alpha1.RedroidInstanceConditionReady),
 		Status:             readyStatus,
 		ObservedGeneration: instance.Generation,
 		Reason:             readyReason,
-		Message:            fmt.Sprintf("Phase=%s", phase),
+		Message:            readyMsg,
 	})
 
 	// Sync Scheduled condition.
 	scheduledStatus := metav1.ConditionFalse
-	scheduledReason := "NoPod"
-	if podName != "" && phase != redroidv1alpha1.RedroidInstanceStopped {
+	var scheduledReason, scheduledMsg string
+	switch {
+	case phase == redroidv1alpha1.RedroidInstanceStopped:
+		scheduledReason = "Stopped"
+		scheduledMsg = "Instance is stopped; no Pod is scheduled."
+	case podName != "" && phase == redroidv1alpha1.RedroidInstanceFailed:
 		scheduledStatus = metav1.ConditionTrue
 		scheduledReason = "PodCreated"
+		scheduledMsg = fmt.Sprintf("Pod %q was created but has since failed.", podName)
+	case podName != "":
+		scheduledStatus = metav1.ConditionTrue
+		scheduledReason = "PodCreated"
+		scheduledMsg = fmt.Sprintf("Pod %q has been created and scheduled.", podName)
+	default:
+		scheduledReason = "NoPod"
+		scheduledMsg = "No Pod has been created yet."
 	}
 	setCondition(&instance.Status.Conditions, metav1.Condition{
 		Type:               string(redroidv1alpha1.RedroidInstanceConditionScheduled),
 		Status:             scheduledStatus,
 		ObservedGeneration: instance.Generation,
 		Reason:             scheduledReason,
+		Message:            scheduledMsg,
 	})
 
 	return ctrl.Result{}, r.Status().Patch(ctx, instance, patch)
