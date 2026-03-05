@@ -94,7 +94,7 @@ If you want all instances to share a common pre-installed state (apps, accounts,
 
 ```yaml
 # base-instance.yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
   name: android-base
@@ -130,7 +130,7 @@ kubectl delete redroidinstance android-base -n redroid-system
 
 ```yaml
 # instance.yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
   name: android-0
@@ -195,7 +195,7 @@ A `RedroidTask` runs a workload (sidecar container) against one or more instance
 
 ```yaml
 # task.yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
   name: screenshot
@@ -217,7 +217,7 @@ spec:
 ### Scheduled (CronJob) task
 
 ```yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
   name: daily-run

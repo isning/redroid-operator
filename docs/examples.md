@@ -41,7 +41,7 @@ Each account gets its own `RedroidInstance` at a unique `spec.index`.  They shar
 
 ```yaml
 # redroid-instances.yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
   name: maa-0
@@ -53,7 +53,7 @@ spec:
   diffDataPVC:   redroid-data-diff-pvc
   gpuMode: host
 ---
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
   name: maa-1
@@ -96,7 +96,7 @@ data:
 
 ```yaml
 # maa-daily-task.yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
   name: maa-daily
@@ -133,7 +133,7 @@ kubectl apply -f maa-daily-task.yaml
 
 # Watch the daily run
 kubectl get redroidtasks -w
-kubectl logs -l redroid.io/task=maa-daily -c maa-cli -f
+kubectl logs -l redroid.isning.moe/task=maa-daily -c maa-cli -f
 ```
 
 ---
@@ -153,7 +153,7 @@ The `spec.suspend` field is never modified, so GitOps tools (Flux, Argo CD) see 
 ### Instance (normally off)
 
 ```yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
   name: maa-1
@@ -171,7 +171,7 @@ spec:
 
 ```yaml
 # maa-wakeinstance-task.yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
   name: maa-wake-run
@@ -225,7 +225,7 @@ Some tasks (base-layer update, device image backup) need exclusive write access 
 
 ```yaml
 # backup-task.yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
   name: diff-backup
@@ -253,7 +253,7 @@ spec:
 
 ```bash
 kubectl apply -f backup-task.yaml
-kubectl logs -l redroid.io/task=diff-backup -c backup -f
+kubectl logs -l redroid.isning.moe/task=diff-backup -c backup -f
 ```
 
 ---
@@ -268,7 +268,7 @@ All normal instances share a common read-only base layer (`redroid-data-base-pvc
 
 ```yaml
 # base-init.yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
   name: android-base
@@ -323,7 +323,7 @@ data:
     adb install /apks/MAA.apk
     echo "[base-init] done"
 ---
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
   name: base-init-task
@@ -351,7 +351,7 @@ spec:
 Run the same task against five instances but only two at a time (useful when GPU or network bandwidth is limited).
 
 ```yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
   name: weekly-scan
@@ -427,7 +427,7 @@ stringData:
 
 ```yaml
 # proxy-instance.yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
   name: android-proxy
@@ -464,7 +464,7 @@ spec:
 Supply instance-specific credentials (e.g. per-account API tokens stored in separate Secrets) using `spec.instances[].volumes` and `spec.instances[].volumeMounts`.
 
 ```yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
   name: maa-daily

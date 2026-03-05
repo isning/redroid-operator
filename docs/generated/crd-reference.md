@@ -2,9 +2,9 @@
 
 Packages:
 
-- [redroid.io/v1alpha1](#redroidiov1alpha1)
+- [redroid.isning.moe/v1alpha1](#redroidisningmoev1alpha1)
 
-# redroid.io/v1alpha1
+# redroid.isning.moe/v1alpha1
 
 Resource Types:
 
@@ -16,7 +16,7 @@ Resource Types:
 
 
 ## RedroidInstance
-<sup><sup>[↩ Parent](#redroidiov1alpha1 )</sup></sup>
+<sup><sup>[↩ Parent](#redroidisningmoev1alpha1 )</sup></sup>
 
 
 
@@ -38,7 +38,7 @@ It represents a single persistent Android container instance backed by overlayfs
     <tbody><tr>
       <td><b>apiVersion</b></td>
       <td>string</td>
-      <td>redroid.io/v1alpha1</td>
+      <td>redroid.isning.moe/v1alpha1</td>
       <td>true</td>
       </tr>
       <tr>
@@ -2816,7 +2816,7 @@ temporary wake (and lets spec.suspend take effect again) once this time has pass
 </table>
 
 ## RedroidTask
-<sup><sup>[↩ Parent](#redroidiov1alpha1 )</sup></sup>
+<sup><sup>[↩ Parent](#redroidisningmoev1alpha1 )</sup></sup>
 
 
 
@@ -2839,7 +2839,7 @@ tool containers against a set of RedroidInstance overlay partitions.
     <tbody><tr>
       <td><b>apiVersion</b></td>
       <td>string</td>
-      <td>redroid.io/v1alpha1</td>
+      <td>redroid.isning.moe/v1alpha1</td>
       <td>true</td>
       </tr>
       <tr>
