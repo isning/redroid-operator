@@ -41,7 +41,7 @@ helm install redroid-operator \
 | nodeSelector | object | `{}` | Node selector for the controller-manager Pod. |
 | podAnnotations | object | `{}` | Extra annotations added to the controller-manager Pod. |
 | podSecurityContext | object | `{"runAsNonRoot":true}` | SecurityContext for the controller-manager Pod. |
-| rbac | object | `{"create":true}` | RBAC: create ClusterRole and ClusterRoleBinding for the operator. |
+| rbac | object | `{"create":true}` | RBAC: create ClusterRole/Role and their bindings for the operator. |
 | replicaCount | int | `1` | Number of controller-manager replicas. |
 | resources.limits.cpu | string | `"200m"` |  |
 | resources.limits.memory | string | `"128Mi"` |  |
@@ -52,6 +52,7 @@ helm install redroid-operator \
 | serviceAccount.create | bool | `true` | Whether to create the ServiceAccount. |
 | serviceAccount.name | string | `""` | Override service account name (defaults to chart fullname). |
 | tolerations | list | `[]` | Tolerations for the controller-manager Pod. |
+| watchNamespaces | object | `{"enabled":false,"namespaces":[]}` | Namespaced-mode configuration. When enabled is false (default) the operator runs cluster-wide:   a ClusterRole + ClusterRoleBinding are created. When enabled is true the operator watches only the listed namespaces:   a Role + RoleBinding are created per namespace instead. |
 
 ## Source Code
 
