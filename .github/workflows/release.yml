@@ -91,7 +91,7 @@ jobs:
         run: |
           VERSION="${GITHUB_REF_NAME#v}"   # strip leading 'v' for SemVer
           sed -i "s/^version:.*/version: ${VERSION}/" charts/redroid-operator/Chart.yaml
-          sed -i "s/^appVersion:.*/appVersion: \"${GITHUB_REF_NAME}\"/" charts/redroid-operator/Chart.yaml
+          sed -i "s/^appVersion:.*/appVersion: \"${VERSION}\"/" charts/redroid-operator/Chart.yaml
 
       - name: Package Helm chart
         run: |
@@ -146,7 +146,7 @@ jobs:
 
       - name: Build and package kubectl-redroid
         run: |
-          VERSION="${GITHUB_REF_NAME}"
+          VERSION="${GITHUB_REF_NAME#v}"
           mkdir -p dist
           if [[ "$GOOS" == "windows" ]]; then
             go build -mod=vendor \

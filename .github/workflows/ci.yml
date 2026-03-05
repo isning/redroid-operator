@@ -87,7 +87,7 @@ jobs:
           EXT=""
           [[ "$GOOS" == "windows" ]] && EXT=".exe"
           go build -mod=vendor \
-            -ldflags "-X github.com/isning/redroid-operator/cmd/kubectl-redroid/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+            -ldflags "-X github.com/isning/redroid-operator/cmd/kubectl-redroid/cmd.Version=$(git describe --tags --always --dirty 2>/dev/null | sed 's/^v//' || echo dev)" \
             -o "bin/kubectl-redroid-${GOOS}-${GOARCH}${EXT}" \
             ./cmd/kubectl-redroid/
 
