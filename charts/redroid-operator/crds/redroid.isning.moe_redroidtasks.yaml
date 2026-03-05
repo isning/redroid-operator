@@ -4065,7 +4065,7 @@ spec:
             type: object
             x-kubernetes-validations:
             - message: suspendInstance and wakeInstance are mutually exclusive
-              rule: '!(self.suspendInstance == true && self.wakeInstance == true)'
+              rule: '!(has(self.suspendInstance) && self.suspendInstance == true && has(self.wakeInstance) && self.wakeInstance == true)'
           status:
             description: RedroidTaskStatus defines the observed state of RedroidTask.
             properties:

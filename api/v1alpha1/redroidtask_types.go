@@ -85,7 +85,7 @@ type IntegrationSpec struct {
 }
 
 // RedroidTaskSpec defines the desired state of RedroidTask.
-// +kubebuilder:validation:XValidation:rule="!(self.suspendInstance == true && self.wakeInstance == true)",message="suspendInstance and wakeInstance are mutually exclusive"
+// +kubebuilder:validation:XValidation:rule="!(has(self.suspendInstance) && self.suspendInstance == true && has(self.wakeInstance) && self.wakeInstance == true)",message="suspendInstance and wakeInstance are mutually exclusive"
 type RedroidTaskSpec struct {
 	// Instances lists the RedroidInstance resources that this task targets.
 	// Each instance runs its own Job/CronJob execution, inheriting
