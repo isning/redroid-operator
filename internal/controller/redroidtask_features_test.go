@@ -216,14 +216,14 @@ func TestRedroidTask_TaskImagePullSecrets(t *testing.T) {
 	}
 }
 
-// TestRedroidTask_ServiceAccountName verifies that ServiceAccountName set on an
-// IntegrationSpec is propagated to the Job's PodSpec.
+// TestRedroidTask_ServiceAccountName verifies that ServiceAccountName set on the
+// task spec is propagated to the Job's PodSpec.
 func TestRedroidTask_ServiceAccountName(t *testing.T) {
 	scheme := newTestScheme(t)
 	inst := makeRunningInstance("maa-0", 0, "10.0.0.1:5555")
 	integ := basicIntegration()
-	integ.ServiceAccountName = "my-task-sa"
 	task := makeTask("task-sa", []string{"maa-0"}, "", []redroidv1alpha1.IntegrationSpec{integ})
+	task.Spec.ServiceAccountName = "my-task-sa"
 
 	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
 		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).

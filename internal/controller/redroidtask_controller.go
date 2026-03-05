@@ -2,7 +2,11 @@ package controller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	batchv1 "k8s.io/api/batch/v1"
@@ -81,26 +85,32 @@ func (r *RedroidTaskReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 	}
 
 	// Resolve each InstanceRef to a RedroidInstance.
-	instances, err := r.resolveInstances(ctx, task)
+	pairs, err := r.resolveInstances(ctx, task)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
 
 	if task.Spec.Schedule == "" {
 		// One-shot: create one Job per instance.
-		return r.reconcileJobs(ctx, task, instances, logger)
+		return r.reconcileJobs(ctx, task, pairs, logger)
 	}
 	// Scheduled: create one CronJob per instance.
-	return r.reconcileCronJobs(ctx, task, instances, logger)
+	return r.reconcileCronJobs(ctx, task, pairs, logger)
 }
 
-// resolveInstances fetches all RedroidInstance resources referenced by the task.
+// resolveInstances fetches all RedroidInstance resources referenced by the task, returning explicit (ref, inst) pairs.
 func (r *RedroidTaskReconciler) resolveInstances(
 	ctx context.Context,
 	task *redroidv1alpha1.RedroidTask,
-) ([]*redroidv1alpha1.RedroidInstance, error) {
-	result := make([]*redroidv1alpha1.RedroidInstance, 0, len(task.Spec.Instances))
-	for _, ref := range task.Spec.Instances {
+) ([]InstancePair, error) {
+	result := make([]InstancePair, 0, len(task.Spec.Instances))
+	seen := make(map[string]bool, len(task.Spec.Instances))
+	for i := range task.Spec.Instances {
+		ref := &task.Spec.Instances[i]
+		if seen[ref.Name] {
+			return nil, fmt.Errorf("duplicate instance name %q in spec.instances", ref.Name)
+		}
+		seen[ref.Name] = true
 		inst := &redroidv1alpha1.RedroidInstance{}
 		if err := r.Get(ctx, types.NamespacedName{
 			Name:      ref.Name,
@@ -108,38 +118,36 @@ func (r *RedroidTaskReconciler) resolveInstances(
 		}, inst); err != nil {
 			return nil, fmt.Errorf("resolve instance %q: %w", ref.Name, err)
 		}
-		result = append(result, inst)
+		result = append(result, InstancePair{Ref: ref, Inst: inst})
 	}
 	return result, nil
 }
 
+// InstancePair holds a reference to both the InstanceRef and the resolved RedroidInstance.
+type InstancePair struct {
+	Ref  *redroidv1alpha1.InstanceRef
+	Inst *redroidv1alpha1.RedroidInstance
+}
+
 // reconcileJobs ensures one Job per instance exists for a one-shot task.
-// When task.Spec.SuspendInstance is true the controller first sets
-// status.suspended on each instance (so the instance controller stops
-// the Pod), waits for the instance to reach phase Stopped, then creates the
-// Job.  After the Job finishes the temporary suspend is cleared.
-//
-// When task.Spec.WakeInstance is true the controller sets status.woken on each
-// instance (so the instance controller starts the Pod even when spec.suspend is
-// true), waits for phase Running, then creates the Job.  After the Job finishes
-// status.woken is cleared, allowing spec.suspend to take effect again.
 func (r *RedroidTaskReconciler) reconcileJobs(
 	ctx context.Context,
 	task *redroidv1alpha1.RedroidTask,
-	instances []*redroidv1alpha1.RedroidInstance,
+	pairs []InstancePair,
 	logger interface{ Info(string, ...interface{}) },
 ) (ctrl.Result, error) {
 	activeJobs := []string{}
 	requeueAfter := time.Duration(0)
 
-	for i, inst := range instances {
+	for _, pair := range pairs {
+		inst := pair.Inst
+		ref := pair.Ref
 		jobName := fmt.Sprintf("%s-%s", task.Name, inst.Name)
 		job := &batchv1.Job{}
 		err := r.Get(ctx, types.NamespacedName{Name: jobName, Namespace: task.Namespace}, job)
 
 		if apierrors.IsNotFound(err) {
 			if task.Spec.SuspendInstance {
-				// Step 1: set suspended if not yet set.
 				if inst.Status.Suspended == nil {
 					if setErr := r.setInstanceSuspended(ctx, inst,
 						"task/"+task.Name,
@@ -152,7 +160,6 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 					requeueAfter = 5 * time.Second
 					continue
 				}
-				// Step 2: wait for instance Pod to stop.
 				if inst.Status.Phase != redroidv1alpha1.RedroidInstanceStopped {
 					logger.Info("waiting for instance to stop before creating Job",
 						"instance", inst.Name, "phase", inst.Status.Phase)
@@ -160,7 +167,6 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 					continue
 				}
 			} else if task.Spec.WakeInstance {
-				// Step 1: set woken if not yet set.
 				if inst.Status.Woken == nil {
 					if setErr := r.setInstanceWoken(ctx, inst,
 						"task/"+task.Name,
@@ -173,7 +179,6 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 					requeueAfter = 5 * time.Second
 					continue
 				}
-				// Step 2: wait for instance Pod to start.
 				if inst.Status.Phase != redroidv1alpha1.RedroidInstanceRunning {
 					logger.Info("waiting for instance to start before creating Job",
 						"instance", inst.Name, "phase", inst.Status.Phase)
@@ -182,7 +187,7 @@ func (r *RedroidTaskReconciler) reconcileJobs(
 				}
 			}
 			logger.Info("creating Job for instance", "job", jobName, "instance", inst.Name)
-			newJob := r.buildJob(task, inst, jobName, i)
+			newJob := r.buildJob(task, ref, inst, jobName)
 			if err := controllerutil.SetControllerReference(task, newJob, r.Scheme); err != nil {
 				return ctrl.Result{}, err
 			}
@@ -279,15 +284,17 @@ func (r *RedroidTaskReconciler) clearInstanceWoken(
 func (r *RedroidTaskReconciler) reconcileCronJobs(
 	ctx context.Context,
 	task *redroidv1alpha1.RedroidTask,
-	instances []*redroidv1alpha1.RedroidInstance,
+	pairs []InstancePair,
 	logger interface{ Info(string, ...interface{}) },
 ) (ctrl.Result, error) {
-	for i, inst := range instances {
+	for _, pair := range pairs {
+		inst := pair.Inst
+		ref := pair.Ref
 		cronName := fmt.Sprintf("%s-%s", task.Name, inst.Name)
 		existing := &batchv1.CronJob{}
 		err := r.Get(ctx, types.NamespacedName{Name: cronName, Namespace: task.Namespace}, existing)
 
-		desired := r.buildCronJob(task, inst, cronName, i)
+		desired := r.buildCronJob(task, ref, inst, cronName)
 		if err := controllerutil.SetControllerReference(task, desired, r.Scheme); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -305,11 +312,21 @@ func (r *RedroidTaskReconciler) reconcileCronJobs(
 
 		// Update mutable fields from task spec.
 		patch := client.MergeFrom(existing.DeepCopy())
-		existing.Spec.Schedule = task.Spec.Schedule
-		existing.Spec.Suspend = &task.Spec.Suspend
-		if task.Spec.Timezone != "" {
-			existing.Spec.TimeZone = &task.Spec.Timezone
-		}
+		existing.Spec.Schedule = desired.Spec.Schedule
+		existing.Spec.ConcurrencyPolicy = desired.Spec.ConcurrencyPolicy
+		existing.Spec.Suspend = desired.Spec.Suspend
+		// Explicitly assign (or clear) pointer fields so removing a value from
+		// the task spec propagates correctly (e.g. clearing Timezone sets this to nil).
+		existing.Spec.TimeZone = desired.Spec.TimeZone
+		existing.Spec.StartingDeadlineSeconds = desired.Spec.StartingDeadlineSeconds
+		existing.Spec.SuccessfulJobsHistoryLimit = desired.Spec.SuccessfulJobsHistoryLimit
+		existing.Spec.FailedJobsHistoryLimit = desired.Spec.FailedJobsHistoryLimit
+		// Sync the full pod template so changes to volumes, containers, images,
+		// env vars, and integration args are reconciled on every pass.
+		// Replace the entire JobTemplate.Spec so fields like BackoffLimit and
+		// ActiveDeadlineSeconds from buildCronJob also propagate.
+		existing.Spec.JobTemplate.Spec = desired.Spec.JobTemplate.Spec
+		existing.Spec.JobTemplate.ObjectMeta = desired.Spec.JobTemplate.ObjectMeta
 		if err := r.Patch(ctx, existing, patch); err != nil {
 			return ctrl.Result{}, fmt.Errorf("patch cronjob %s: %w", cronName, err)
 		}
@@ -332,11 +349,11 @@ func (r *RedroidTaskReconciler) patchTaskStatus(
 // buildJob constructs a Job manifest that runs all integrations against a single Redroid instance.
 func (r *RedroidTaskReconciler) buildJob(
 	task *redroidv1alpha1.RedroidTask,
+	ref *redroidv1alpha1.InstanceRef,
 	inst *redroidv1alpha1.RedroidInstance,
 	name string,
-	_ int,
 ) *batchv1.Job {
-	podSpec := r.buildTaskPodSpec(task, inst)
+	podSpec := r.buildTaskPodSpec(task, inst, ref)
 
 	backoffLimit := int32(0)
 	if task.Spec.BackoffLimit != nil {
@@ -370,11 +387,11 @@ func (r *RedroidTaskReconciler) buildJob(
 // buildCronJob constructs a CronJob that fires the per-instance pod on schedule.
 func (r *RedroidTaskReconciler) buildCronJob(
 	task *redroidv1alpha1.RedroidTask,
+	ref *redroidv1alpha1.InstanceRef,
 	inst *redroidv1alpha1.RedroidInstance,
 	name string,
-	_ int,
 ) *batchv1.CronJob {
-	podSpec := r.buildTaskPodSpec(task, inst)
+	podSpec := r.buildTaskPodSpec(task, inst, ref)
 
 	backoffLimit := int32(0)
 	if task.Spec.BackoffLimit != nil {
@@ -434,7 +451,14 @@ func (r *RedroidTaskReconciler) buildCronJob(
 func (r *RedroidTaskReconciler) buildTaskPodSpec(
 	task *redroidv1alpha1.RedroidTask,
 	inst *redroidv1alpha1.RedroidInstance,
+	ref *redroidv1alpha1.InstanceRef,
 ) corev1.PodSpec {
+	// Nil-safe guard: callers may pass nil when there is no per-instance ref.
+	refSafe := ref
+	if refSafe == nil {
+		refSafe = &redroidv1alpha1.InstanceRef{}
+	}
+
 	indexStr := fmt.Sprintf("%d", inst.Spec.Index)
 	hostPathType := corev1.HostPathDirectoryOrCreate
 	privileged := true
@@ -481,29 +505,10 @@ func (r *RedroidTaskReconciler) buildTaskPodSpec(
 		},
 	}
 
-	// Collect config volumes from all integrations (deduplicated by ConfigMap name).
-	seenVolumes := map[string]struct{}{"data-base": {}, "data-diff": {}, "dev-dri": {}}
-	for _, integ := range task.Spec.Integrations {
-		for _, cfg := range integ.Configs {
-			// Use the ConfigMap name as the volume name so that different integrations
-			// sharing the same ConfigMap reuse a single volume, and different ConfigMaps
-			// within the same integration each get their own volume.
-			volName := "cm-" + cfg.ConfigMapName
-			if _, exists := seenVolumes[volName]; !exists {
-				seenVolumes[volName] = struct{}{}
-				volumes = append(volumes, corev1.Volume{
-					Name: volName,
-					VolumeSource: corev1.VolumeSource{
-						ConfigMap: &corev1.ConfigMapVolumeSource{
-							LocalObjectReference: corev1.LocalObjectReference{
-								Name: cfg.ConfigMapName,
-							},
-						},
-					},
-				})
-			}
-		}
-	}
+	// Build the final volume list: reserved base volumes first, then config-map
+	// volumes auto-generated from integrations, then task-level extras, then
+	// per-instance overrides (instance may replace task-level but not reserved/generated).
+	volumes = mergeVolumes(volumes, task.Spec.Integrations, task.Spec.Volumes, refSafe.Volumes)
 
 	// Build integration containers.
 	integrationContainers := make([]corev1.Container, 0, len(task.Spec.Integrations))
@@ -519,16 +524,9 @@ func (r *RedroidTaskReconciler) buildTaskPodSpec(
 		}
 		env = append(env, integ.Env...)
 
-		mounts := append([]corev1.VolumeMount{}, integ.VolumeMounts...)
-		for _, cfg := range integ.Configs {
-			volName := "cm-" + cfg.ConfigMapName
-			mounts = append(mounts, corev1.VolumeMount{
-				Name:      volName,
-				MountPath: cfg.MountPath,
-				SubPath:   cfg.Key,
-				ReadOnly:  true,
-			})
-		}
+		// Merge volume mounts: integration-level, config-derived, and per-instance
+		// overrides — deduplicated by MountPath, sorted for a deterministic pod spec.
+		mounts := mergeVolumeMounts(integ.VolumeMounts, integ.Configs, refSafe.VolumeMounts)
 
 		// Prepend the ADB readiness check.
 		cmd := []string{"/bin/sh", "-c"}
@@ -554,20 +552,10 @@ func (r *RedroidTaskReconciler) buildTaskPodSpec(
 		integrationContainers = append(integrationContainers, c)
 	}
 
-	// Apply ServiceAccountName from the first integration that sets it.
-	// All containers in a Pod share one ServiceAccount.
-	serviceAccountName := ""
-	for _, integ := range task.Spec.Integrations {
-		if integ.ServiceAccountName != "" {
-			serviceAccountName = integ.ServiceAccountName
-			break
-		}
-	}
-
 	sidecarRestartPolicy := restartAlways
 	return corev1.PodSpec{
 		RestartPolicy:      corev1.RestartPolicyNever,
-		ServiceAccountName: serviceAccountName,
+		ServiceAccountName: task.Spec.ServiceAccountName,
 		NodeSelector:       inst.Spec.NodeSelector,
 		Tolerations:        inst.Spec.Tolerations,
 		Affinity:           inst.Spec.Affinity,
@@ -599,6 +587,150 @@ func (r *RedroidTaskReconciler) buildTaskPodSpec(
 		Containers: integrationContainers,
 		Volumes:    volumes,
 	}
+}
+
+// Volume origin constants used by mergeVolumes to enforce override precedence.
+const (
+	volOriginReserved  = "reserved"
+	volOriginGenerated = "generated"
+	volOriginTask      = "task"
+	volOriginInstance  = "instance"
+)
+
+// mergeVolumes builds the final volume list for a task pod.
+// baseVolumes contains the reserved entries (data-base, data-diff, dev-dri) which
+// are never overrideable. ConfigMap volumes are auto-generated from integrations
+// (cm-* prefix, deduplicated by ConfigMap name). Task-level volumes are appended
+// next; instance-level volumes may replace task-level ones but never reserved or
+// generated entries.
+func mergeVolumes(
+	baseVolumes []corev1.Volume,
+	integrations []redroidv1alpha1.IntegrationSpec,
+	taskVolumes []corev1.Volume,
+	instanceVolumes []corev1.Volume,
+) []corev1.Volume {
+	volumes := append([]corev1.Volume{}, baseVolumes...)
+	seen := make(map[string]string, len(baseVolumes))
+	volIndex := make(map[string]int, len(baseVolumes)) // name → index in volumes
+	for i, v := range baseVolumes {
+		seen[v.Name] = volOriginReserved
+		volIndex[v.Name] = i
+	}
+
+	for _, integ := range integrations {
+		for _, cfg := range integ.Configs {
+			// Use the ConfigMap name as the volume name so that different integrations
+			// sharing the same ConfigMap reuse a single volume.
+			volName := ConfigMapVolumeName(cfg.ConfigMapName)
+			if _, exists := seen[volName]; !exists {
+				volIndex[volName] = len(volumes)
+				seen[volName] = volOriginGenerated
+				volumes = append(volumes, corev1.Volume{
+					Name: volName,
+					VolumeSource: corev1.VolumeSource{
+						ConfigMap: &corev1.ConfigMapVolumeSource{
+							LocalObjectReference: corev1.LocalObjectReference{
+								Name: cfg.ConfigMapName,
+							},
+						},
+					},
+				})
+			}
+		}
+	}
+
+	for i := range taskVolumes {
+		v := &taskVolumes[i]
+		if _, exists := seen[v.Name]; !exists {
+			volIndex[v.Name] = len(volumes)
+			seen[v.Name] = volOriginTask
+			volumes = append(volumes, *v)
+		}
+	}
+
+	for i := range instanceVolumes {
+		v := &instanceVolumes[i]
+		origin, exists := seen[v.Name]
+		if !exists {
+			volIndex[v.Name] = len(volumes)
+			seen[v.Name] = volOriginInstance
+			volumes = append(volumes, *v)
+		} else if origin == volOriginTask {
+			// O(1) replacement using the index map; reserved/generated entries are skipped.
+			volumes[volIndex[v.Name]] = *v
+		}
+	}
+	return volumes
+}
+
+// mergeVolumeMounts builds the deduplicated, deterministically sorted VolumeMount
+// list for one integration container. integMounts and config-derived mounts form
+// the base; instanceMounts can override any entry keyed by MountPath.
+func mergeVolumeMounts(
+	integMounts []corev1.VolumeMount,
+	configs []redroidv1alpha1.ConfigFile,
+	instanceMounts []corev1.VolumeMount,
+) []corev1.VolumeMount {
+	byPath := make(map[string]corev1.VolumeMount, len(integMounts)+len(configs)+len(instanceMounts))
+	for _, m := range integMounts {
+		byPath[m.MountPath] = m
+	}
+	for _, cfg := range configs {
+		byPath[cfg.MountPath] = corev1.VolumeMount{
+			Name:      ConfigMapVolumeName(cfg.ConfigMapName),
+			MountPath: cfg.MountPath,
+			SubPath:   cfg.Key,
+			ReadOnly:  true,
+		}
+	}
+	for _, m := range instanceMounts {
+		byPath[m.MountPath] = m
+	}
+	paths := make([]string, 0, len(byPath))
+	for p := range byPath {
+		paths = append(paths, p)
+	}
+	sort.Strings(paths)
+	mounts := make([]corev1.VolumeMount, 0, len(paths))
+	for _, p := range paths {
+		mounts = append(mounts, byPath[p])
+	}
+	return mounts
+}
+
+// ConfigMapVolumeName returns a DNS-1123-label-safe Kubernetes volume name for
+// the given ConfigMap name. It lowercases the input, replaces dots and
+// underscores with hyphens, strips any remaining non-alphanumeric/non-hyphen
+// characters, and prepends the "cm-" prefix. A deterministic 8-character
+// SHA-256 suffix (derived from the original name) is always appended so that
+// normalized forms that collide (e.g. "foo.bar" vs "foo-bar") remain unique.
+// The base is truncated if necessary so that prefix + base + suffix <= 63.
+func ConfigMapVolumeName(configMapName string) string {
+	const prefix = "cm-"
+	const maxLen = 63
+
+	var b strings.Builder
+	for _, r := range strings.ToLower(configMapName) {
+		switch {
+		case r >= 'a' && r <= 'z', r >= '0' && r <= '9', r == '-':
+			b.WriteRune(r)
+		case r == '.', r == '_':
+			b.WriteRune('-')
+			// other characters are stripped
+		}
+	}
+	base := b.String()
+
+	// Always append a deterministic hash so that distinct names whose
+	// normalized forms collide still produce distinct volume names.
+	hash := sha256.Sum256([]byte(configMapName))
+	suffix := "-" + hex.EncodeToString(hash[:])[:8] // 9 chars including leading dash
+
+	allowed := maxLen - len(prefix) - len(suffix)
+	if len(base) > allowed {
+		base = base[:allowed]
+	}
+	return prefix + base + suffix
 }
 
 // shellJoin serializes a command + args list for embedding in a shell -c string.
