@@ -1,7 +1,7 @@
 # Build the manager binary in a build stage, then copy into a minimal runtime image.
 
 # Build stage
-FROM golang:1.22 AS builder
+FROM golang:1.24 AS builder
 ARG TARGETOS=linux
 ARG TARGETARCH=amd64
 ARG VERSION=dev
