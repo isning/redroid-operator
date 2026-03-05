@@ -1,0 +1,101 @@
+suite: cluster-wide mode (watchNamespaces.enabled=false)
+templates:
+  - clusterrole.yaml
+  - clusterrolebinding.yaml
+  - role.yaml
+  - rolebinding.yaml
+  - deployment.yaml
+tests:
+  - it: should create ClusterRole and ClusterRoleBinding
+    set:
+      watchNamespaces.enabled: false
+    asserts:
+      - isKind:
+          of: ClusterRole
+        template: clusterrole.yaml
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-redroid-operator-manager
+        template: clusterrole.yaml
+      - isKind:
+          of: ClusterRoleBinding
+        template: clusterrolebinding.yaml
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-redroid-operator-manager
+        template: clusterrolebinding.yaml
+
+  - it: should NOT create namespaced manager Role or RoleBinding
+    set:
+      watchNamespaces.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 1  # only leader-election Role
+        template: role.yaml
+      - hasDocuments:
+          count: 1  # only leader-election RoleBinding
+        template: rolebinding.yaml
+
+  - it: should always create leader-election Role in release namespace
+    set:
+      watchNamespaces.enabled: false
+    asserts:
+      - isKind:
+          of: Role
+        template: role.yaml
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-redroid-operator-leader-election
+        documentIndex: 0
+        template: role.yaml
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+        documentIndex: 0
+        template: role.yaml
+
+  - it: should always create leader-election RoleBinding in release namespace
+    set:
+      watchNamespaces.enabled: false
+    asserts:
+      - isKind:
+          of: RoleBinding
+        template: rolebinding.yaml
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-redroid-operator-leader-election
+        documentIndex: 0
+        template: rolebinding.yaml
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+        documentIndex: 0
+        template: rolebinding.yaml
+
+  - it: should NOT pass --watch-namespaces flag to the manager
+    set:
+      watchNamespaces.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --watch-namespaces
+          any: true
+        template: deployment.yaml
+
+  - it: should not create ClusterRole when rbac.create=false
+    set:
+      rbac.create: false
+      watchNamespaces.enabled: false
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: clusterrole.yaml
+      - hasDocuments:
+          count: 0
+        template: clusterrolebinding.yaml
+      - hasDocuments:
+          count: 0
+        template: role.yaml
+      - hasDocuments:
+          count: 0
+        template: rolebinding.yaml

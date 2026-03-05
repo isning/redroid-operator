@@ -122,6 +122,10 @@ helm-crds: manifests ## Sync generated CRDs into the Helm chart's crds/ director
 helm-lint: helm-crds ## Lint the Helm chart.
 	$(HELM) lint $(CHART_DIR)
 
+.PHONY: helm-test
+helm-test: helm-crds ## Run Helm chart unit tests (requires helm-unittest plugin).
+	$(HELM) unittest $(CHART_DIR)
+
 .PHONY: helm-package
 helm-package: helm-crds ## Package the Helm chart into dist/.
 	mkdir -p dist

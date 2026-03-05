@@ -1,0 +1,207 @@
+suite: namespaced mode (watchNamespaces.enabled=true)
+templates:
+  - clusterrole.yaml
+  - clusterrolebinding.yaml
+  - role.yaml
+  - rolebinding.yaml
+  - deployment.yaml
+tests:
+  - it: should NOT create ClusterRole or ClusterRoleBinding
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: clusterrole.yaml
+      - hasDocuments:
+          count: 0
+        template: clusterrolebinding.yaml
+
+  - it: should create one manager Role per namespace
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+        - ns-b
+    asserts:
+      - hasDocuments:
+          count: 3  # ns-a manager + ns-b manager + leader-election
+        template: role.yaml
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-redroid-operator-manager
+        documentIndex: 0
+        template: role.yaml
+      - equal:
+          path: metadata.namespace
+          value: ns-a
+        documentIndex: 0
+        template: role.yaml
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-redroid-operator-manager
+        documentIndex: 1
+        template: role.yaml
+      - equal:
+          path: metadata.namespace
+          value: ns-b
+        documentIndex: 1
+        template: role.yaml
+
+  - it: should always create leader-election Role in release namespace
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+        - ns-b
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-redroid-operator-leader-election
+        documentIndex: 2
+        template: role.yaml
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+        documentIndex: 2
+        template: role.yaml
+
+  - it: manager Role should contain correct rules
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+    asserts:
+      - contains:
+          path: rules
+          content:
+            apiGroups: [redroid.isning.moe]
+            resources: [redroidinstances]
+            verbs: [get, list, watch, create, update, patch, delete]
+        documentIndex: 0
+        template: role.yaml
+      - contains:
+          path: rules
+          content:
+            apiGroups: [batch]
+            resources: [jobs, cronjobs]
+            verbs: [get, list, watch, create, update, patch, delete]
+        documentIndex: 0
+        template: role.yaml
+
+  - it: leader-election Role should only allow leases get/create/update
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+    asserts:
+      - equal:
+          path: rules
+          value:
+            - apiGroups: [coordination.k8s.io]
+              resources: [leases]
+              verbs: [get, create, update]
+        documentIndex: 1
+        template: role.yaml
+
+  - it: should create one manager RoleBinding per namespace
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+        - ns-b
+    asserts:
+      - hasDocuments:
+          count: 3  # ns-a manager + ns-b manager + leader-election
+        template: rolebinding.yaml
+      - equal:
+          path: metadata.namespace
+          value: ns-a
+        documentIndex: 0
+        template: rolebinding.yaml
+      - equal:
+          path: metadata.namespace
+          value: ns-b
+        documentIndex: 1
+        template: rolebinding.yaml
+
+  - it: manager RoleBinding should reference manager Role
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+    asserts:
+      - equal:
+          path: roleRef.kind
+          value: Role
+        documentIndex: 0
+        template: rolebinding.yaml
+      - equal:
+          path: roleRef.name
+          value: RELEASE-NAME-redroid-operator-manager
+        documentIndex: 0
+        template: rolebinding.yaml
+
+  - it: RoleBinding subject namespace should be the release namespace
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+    asserts:
+      - equal:
+          path: subjects[0].namespace
+          value: NAMESPACE
+        documentIndex: 0
+        template: rolebinding.yaml
+
+  - it: should always create leader-election RoleBinding in release namespace
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+        - ns-b
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-redroid-operator-leader-election
+        documentIndex: 2
+        template: rolebinding.yaml
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+        documentIndex: 2
+        template: rolebinding.yaml
+
+  - it: should pass --watch-namespaces flag with comma-joined namespaces
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+        - ns-b
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --watch-namespaces=ns-a,ns-b
+        template: deployment.yaml
+
+  - it: should not create namespaced RBAC when rbac.create=false
+    set:
+      rbac.create: false
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: role.yaml
+      - hasDocuments:
+          count: 0
+        template: rolebinding.yaml
+      - hasDocuments:
+          count: 0
+        template: clusterrole.yaml
+      - hasDocuments:
+          count: 0
+        template: clusterrolebinding.yaml

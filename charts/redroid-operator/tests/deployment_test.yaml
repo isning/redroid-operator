@@ -1,0 +1,141 @@
+suite: deployment configuration
+templates:
+  - deployment.yaml
+tests:
+  - it: should be a Deployment
+    asserts:
+      - isKind:
+          of: Deployment
+
+  - it: should use the chart fullname
+    asserts:
+      - equal:
+          path: metadata.name
+          value: RELEASE-NAME-redroid-operator
+
+  - it: should deploy in the release namespace
+    asserts:
+      - equal:
+          path: metadata.namespace
+          value: NAMESPACE
+
+  - it: should use the correct image
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: "ghcr.io/isning/redroid-operator:.*"
+
+  - it: should enable leader election by default
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --leader-elect
+
+  - it: should NOT pass --leader-elect when leaderElection=false
+    set:
+      leaderElection: false
+      # also enable watchNamespaces so args is non-null
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --leader-elect
+          any: true
+
+  - it: should NOT pass --watch-namespaces in cluster-wide mode
+    set:
+      watchNamespaces.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: --watch-namespaces
+          any: true
+
+  - it: should pass --watch-namespaces in namespaced mode
+    set:
+      watchNamespaces.enabled: true
+      watchNamespaces.namespaces:
+        - ns-a
+        - ns-b
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --watch-namespaces=ns-a,ns-b
+
+  - it: should set replicas from values
+    set:
+      replicaCount: 3
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 3
+
+  - it: should use the serviceaccount name
+    asserts:
+      - equal:
+          path: spec.template.spec.serviceAccountName
+          value: RELEASE-NAME-redroid-operator
+
+  - it: should expose metrics and healthz ports
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 8080
+            name: metrics
+            protocol: TCP
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 8081
+            name: healthz
+            protocol: TCP
+
+  - it: should use custom metricsPort and healthzPort
+    set:
+      metricsPort: 9090
+      healthzPort: 9091
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 9090
+            name: metrics
+            protocol: TCP
+      - contains:
+          path: spec.template.spec.containers[0].ports
+          content:
+            containerPort: 9091
+            name: healthz
+            protocol: TCP
+
+  - it: should apply extra environment variables
+    set:
+      extraEnv:
+        - name: FOO
+          value: bar
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FOO
+            value: bar
+
+  - it: should set resource limits and requests
+    set:
+      resources:
+        limits:
+          cpu: 500m
+          memory: 256Mi
+        requests:
+          cpu: 50m
+          memory: 128Mi
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].resources.limits.cpu
+          value: 500m
+      - equal:
+          path: spec.template.spec.containers[0].resources.requests.memory
+          value: 128Mi
