@@ -5,6 +5,9 @@ package controller_test
 import (
 	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -13,21 +16,25 @@ import (
 	redroidv1alpha1 "github.com/isning/redroid-operator/api/v1alpha1"
 )
 
+func TestControllers(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Controller Suite")
+}
+
 // newTestScheme builds a Scheme that includes all types used by the controllers.
-func newTestScheme(t *testing.T) *runtime.Scheme {
-	t.Helper()
+func newTestScheme() *runtime.Scheme {
 	s := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(s); err != nil {
-		t.Fatalf("add clientgo scheme: %v", err)
+		panic(err)
 	}
 	if err := corev1.AddToScheme(s); err != nil {
-		t.Fatalf("add corev1 scheme: %v", err)
+		panic(err)
 	}
 	if err := batchv1.AddToScheme(s); err != nil {
-		t.Fatalf("add batchv1 scheme: %v", err)
+		panic(err)
 	}
 	if err := redroidv1alpha1.AddToScheme(s); err != nil {
-		t.Fatalf("add redroid scheme: %v", err)
+		panic(err)
 	}
 	return s
 }

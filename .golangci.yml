@@ -27,6 +27,7 @@ linters:
           - unparam
     paths:
       - zz_generated_deepcopy\.go
+      - vendor/.*
 
 formatters:
   enable:

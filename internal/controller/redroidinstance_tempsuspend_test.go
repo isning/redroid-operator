@@ -5,9 +5,10 @@ package controller_test
 
 import (
 	"context"
-	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -17,153 +18,127 @@ import (
 	"github.com/isning/redroid-operator/internal/controller"
 )
 
-// TestRedroidInstance_SuspendedStopsPod verifies that setting
-// status.suspended (with spec.suspend=false) causes the running Pod to
-// be deleted and the phase changed to Stopped.
-func TestRedroidInstance_SuspendedStopsPod(t *testing.T) {
-	scheme := newTestScheme(t)
-	inst := makeInstance("inst-tmpsus", 0, false) // spec.suspend = false
+var _ = Describe("RedroidInstance TempSuspend", func() {
+	var (
+		scheme = newTestScheme()
+	)
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
-		WithObjects(inst).Build()
+	It("stops the Pod and changes phase to Stopped when status.suspended is set (with spec.suspend=false)", func() {
+		inst := makeInstance("inst-tmpsus", 0, false) // spec.suspend = false
 
-	r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
+			WithObjects(inst).Build()
 
-	// 1st reconcile: add finalizer.
-	reconcileInstance(t, r, "inst-tmpsus")
-	// 2nd reconcile: create Pod.
-	reconcileInstance(t, r, "inst-tmpsus")
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
 
-	// Confirm Pod is created.
-	pod := &corev1.Pod{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "redroid-instance-inst-tmpsus", Namespace: "default"}, pod); err != nil {
-		t.Fatalf("expected Pod to exist: %v", err)
-	}
+		// 1st reconcile: add finalizer.
+		reconcileInstance(r, "inst-tmpsus")
+		// 2nd reconcile: create Pod.
+		reconcileInstance(r, "inst-tmpsus")
 
-	// Set status.suspended without touching spec.suspend.
-	fresh := &redroidv1alpha1.RedroidInstance{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "inst-tmpsus", Namespace: "default"}, fresh); err != nil {
-		t.Fatalf("get instance: %v", err)
-	}
-	fresh.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
-		Reason: "maintenance",
-		Actor:  "manual",
-	}
-	if err := fakeClient.Status().Update(context.Background(), fresh); err != nil {
-		t.Fatalf("set suspended: %v", err)
-	}
+		// Confirm Pod is created.
+		pod := &corev1.Pod{}
+		err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "redroid-instance-inst-tmpsus", Namespace: "default"}, pod)
+		Expect(err).NotTo(HaveOccurred(), "expected Pod to exist")
 
-	// Reconcile — controller should delete Pod and set phase=Stopped.
-	reconcileInstance(t, r, "inst-tmpsus")
+		// Set status.suspended without touching spec.suspend.
+		fresh := &redroidv1alpha1.RedroidInstance{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "inst-tmpsus", Namespace: "default"}, fresh)
+		Expect(err).NotTo(HaveOccurred(), "get instance")
 
-	result := &redroidv1alpha1.RedroidInstance{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "inst-tmpsus", Namespace: "default"}, result); err != nil {
-		t.Fatalf("get after reconcile: %v", err)
-	}
-	if result.Status.Phase != redroidv1alpha1.RedroidInstanceStopped {
-		t.Errorf("expected Stopped phase, got %v", result.Status.Phase)
-	}
-	// spec.suspend should remain false — that is the whole point.
-	if result.Spec.Suspend {
-		t.Error("spec.suspend must not be modified by suspended logic")
-	}
-	// Pod should be gone.
-	deletedPod := &corev1.Pod{}
-	err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "redroid-instance-inst-tmpsus", Namespace: "default"}, deletedPod)
-	if err == nil {
-		t.Error("Pod should have been deleted when suspended is set")
-	}
-}
+		fresh.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
+			Reason: "maintenance",
+			Actor:  "manual",
+		}
+		err = fakeClient.Status().Update(context.Background(), fresh)
+		Expect(err).NotTo(HaveOccurred(), "set suspended")
 
-// TestRedroidInstance_SuspendedExpiry verifies that once
-// status.suspended.until is in the past the field is auto-cleared and
-// the instance Pod is not deleted.
-func TestRedroidInstance_SuspendedExpiry(t *testing.T) {
-	scheme := newTestScheme(t)
-	inst := makeInstance("inst-expiry", 0, false)
+		// Reconcile — controller should delete Pod and set phase=Stopped.
+		reconcileInstance(r, "inst-tmpsus")
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
-		WithObjects(inst).Build()
+		result := &redroidv1alpha1.RedroidInstance{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "inst-tmpsus", Namespace: "default"}, result)
+		Expect(err).NotTo(HaveOccurred(), "get after reconcile")
 
-	r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
-	reconcileInstance(t, r, "inst-expiry") // add finalizer
-	reconcileInstance(t, r, "inst-expiry") // create Pod
+		Expect(result.Status.Phase).To(Equal(redroidv1alpha1.RedroidInstanceStopped))
+		Expect(result.Spec.Suspend).To(BeFalse(), "spec.suspend must not be modified by suspended logic")
 
-	// Set an already-expired suspended.
-	fresh := &redroidv1alpha1.RedroidInstance{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "inst-expiry", Namespace: "default"}, fresh); err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	past := metav1.NewTime(time.Now().Add(-1 * time.Hour))
-	fresh.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
-		Reason: "expired maintenance window",
-		Actor:  "manual",
-		Until:  &past,
-	}
-	if err := fakeClient.Status().Update(context.Background(), fresh); err != nil {
-		t.Fatalf("set suspended: %v", err)
-	}
+		// Pod should be gone.
+		deletedPod := &corev1.Pod{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "redroid-instance-inst-tmpsus", Namespace: "default"}, deletedPod)
+		Expect(err).To(HaveOccurred(), "Pod should have been deleted when suspended is set")
+	})
 
-	// Reconcile — expired suspend should be auto-cleared; Pod should NOT be deleted.
-	reconcileInstance(t, r, "inst-expiry")
+	It("auto-clears expired status.suspended.until and does not delete Pod", func() {
+		inst := makeInstance("inst-expiry", 0, false)
 
-	result := &redroidv1alpha1.RedroidInstance{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "inst-expiry", Namespace: "default"}, result); err != nil {
-		t.Fatalf("get after reconcile: %v", err)
-	}
-	if result.Status.Suspended != nil {
-		t.Errorf("expired suspended should have been cleared, got %+v", result.Status.Suspended)
-	}
-	// Pod should still exist.
-	liveP := &corev1.Pod{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "redroid-instance-inst-expiry", Namespace: "default"}, liveP); err != nil {
-		t.Errorf("Pod should still exist after expired suspend: %v", err)
-	}
-}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
+			WithObjects(inst).Build()
 
-// TestRedroidInstance_SuspendedAndSpecSuspend verifies that when both
-// spec.suspend and status.suspended are set the Pod is stopped.
-func TestRedroidInstance_SuspendedAndSpecSuspend(t *testing.T) {
-	scheme := newTestScheme(t)
-	inst := makeInstance("inst-both-sus", 0, true) // spec.suspend = true
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		reconcileInstance(r, "inst-expiry") // add finalizer
+		reconcileInstance(r, "inst-expiry") // create Pod
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
-		WithObjects(inst).Build()
+		// Set an already-expired suspended.
+		fresh := &redroidv1alpha1.RedroidInstance{}
+		err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "inst-expiry", Namespace: "default"}, fresh)
+		Expect(err).NotTo(HaveOccurred(), "get instance")
 
-	r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+		past := metav1.NewTime(time.Now().Add(-1 * time.Hour))
+		fresh.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
+			Reason: "expired maintenance window",
+			Actor:  "manual",
+			Until:  &past,
+		}
+		err = fakeClient.Status().Update(context.Background(), fresh)
+		Expect(err).NotTo(HaveOccurred(), "set suspended")
 
-	// Also set suspended.
-	fresh := &redroidv1alpha1.RedroidInstance{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "inst-both-sus", Namespace: "default"}, fresh); err != nil {
-		t.Fatalf("get: %v", err)
-	}
-	fresh.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
-		Reason: "task/maa needs exclusive access",
-		Actor:  "task/maa",
-	}
-	if err := fakeClient.Status().Update(context.Background(), fresh); err != nil {
-		t.Fatalf("set suspended: %v", err)
-	}
+		// Reconcile — expired suspend should be auto-cleared; Pod should NOT be deleted.
+		reconcileInstance(r, "inst-expiry")
 
-	reconcileInstance(t, r, "inst-both-sus")
+		result := &redroidv1alpha1.RedroidInstance{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "inst-expiry", Namespace: "default"}, result)
+		Expect(err).NotTo(HaveOccurred(), "get after reconcile")
 
-	result := &redroidv1alpha1.RedroidInstance{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "inst-both-sus", Namespace: "default"}, result); err != nil {
-		t.Fatalf("get after reconcile: %v", err)
-	}
-	if result.Status.Phase != redroidv1alpha1.RedroidInstanceStopped {
-		t.Errorf("expected Stopped, got %v", result.Status.Phase)
-	}
-}
+		Expect(result.Status.Suspended).To(BeNil(), "expired suspended should have been cleared")
+
+		// Pod should still exist.
+		liveP := &corev1.Pod{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "redroid-instance-inst-expiry", Namespace: "default"}, liveP)
+		Expect(err).NotTo(HaveOccurred(), "Pod should still exist after expired suspend")
+	})
+
+	It("stops the Pod when both spec.suspend and status.suspended are set", func() {
+		inst := makeInstance("inst-both-sus", 0, true) // spec.suspend = true
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
+			WithObjects(inst).Build()
+
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme}
+
+		// Also set suspended.
+		fresh := &redroidv1alpha1.RedroidInstance{}
+		err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "inst-both-sus", Namespace: "default"}, fresh)
+		// FakeClient Get fails if object wasn't created via Reconcile first for some reason?
+		// Actually fake client has it from WithObjects.
+		Expect(err).NotTo(HaveOccurred(), "get instance")
+
+		fresh.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
+			Reason: "task/maa needs exclusive access",
+			Actor:  "task/maa",
+		}
+		err = fakeClient.Status().Update(context.Background(), fresh)
+		Expect(err).NotTo(HaveOccurred(), "set suspended")
+
+		reconcileInstance(r, "inst-both-sus")
+
+		result := &redroidv1alpha1.RedroidInstance{}
+		err = fakeClient.Get(context.Background(), types.NamespacedName{Name: "inst-both-sus", Namespace: "default"}, result)
+		Expect(err).NotTo(HaveOccurred(), "get after reconcile")
+
+		Expect(result.Status.Phase).To(Equal(redroidv1alpha1.RedroidInstanceStopped))
+	})
+})

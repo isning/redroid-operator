@@ -1206,7 +1206,7 @@ type QuobyteVolumeSource struct {
 	ReadOnly bool `json:"readOnly,omitempty" protobuf:"varint,3,opt,name=readOnly"`
 
 	// user to map volume access to
-	// Defaults to serviceaccount user
+	// Defaults to serivceaccount user
 	// +optional
 	User string `json:"user,omitempty" protobuf:"bytes,4,opt,name=user"`
 

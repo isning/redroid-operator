@@ -1,13 +1,10 @@
 package controller_test
 
-// Tests for task.Spec.SuspendInstance — the mechanism where a one-shot Task
-// temporarily stops the referenced RedroidInstance before running and restores
-// it afterwards to prevent overlayfs conflicts.
-
 import (
 	"context"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,165 +40,133 @@ func makeTaskSuspendInstance(name string, instances []string) *redroidv1alpha1.R
 	return task
 }
 
-// TestRedroidTask_SuspendInstanceSetsTempSuspend verifies that when a Job does
-// not yet exist the task controller sets status.suspended on the
-// instance before creating the Job, then requeues.
-func TestRedroidTask_SuspendInstanceSetsTempSuspend(t *testing.T) {
-	scheme := newTestScheme(t)
-	inst := makeRunningInstance("maa-sus", 0, "10.0.0.1:5555")
-	task := makeTaskSuspendInstance("task-sus", []string{"maa-sus"})
+var _ = Describe("RedroidTask SuspendInstance", func() {
+	var (
+		scheme = newTestScheme()
+	)
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
-		WithObjects(inst, task).Build()
+	It("sets TempSuspend on instance before creating Job and requeues", func() {
+		inst := makeRunningInstance("maa-sus", 0, "10.0.0.1:5555")
+		task := makeTaskSuspendInstance("task-sus", []string{"maa-sus"})
 
-	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
+			WithObjects(inst, task).Build()
 
-	// 1st reconcile: adds finalizer.
-	reconcileTask(t, r, "task-sus")
-	// 2nd reconcile: should set suspended on instance and requeue.
-	res := reconcileTask(t, r, "task-sus")
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
 
-	if res.RequeueAfter == 0 {
-		t.Error("expected RequeueAfter > 0 while waiting for instance to stop")
-	}
+		// 1st reconcile: adds finalizer.
+		reconcileTask(r, "task-sus")
+		// 2nd reconcile: should set suspended on instance and requeue.
+		res := reconcileTask(r, "task-sus")
 
-	// Instance should now have suspended set.
-	updatedInst := &redroidv1alpha1.RedroidInstance{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "maa-sus", Namespace: "default"}, updatedInst); err != nil {
-		t.Fatalf("get instance: %v", err)
-	}
-	if updatedInst.Status.Suspended == nil {
-		t.Fatal("expected suspended to be set on instance")
-	}
-	if updatedInst.Status.Suspended.Actor != "task/task-sus" {
-		t.Errorf("expected actor 'task/task-sus', got %q", updatedInst.Status.Suspended.Actor)
-	}
+		Expect(res.RequeueAfter).NotTo(Equal(0), "expected RequeueAfter > 0 while waiting for instance to stop")
 
-	// Job must NOT have been created yet.
-	jobList := &batchv1.JobList{}
-	if err := fakeClient.List(context.Background(), jobList); err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobList.Items) != 0 {
-		t.Errorf("expected 0 jobs (instance not stopped yet), got %d", len(jobList.Items))
-	}
-}
+		// Instance should now have suspended set.
+		updatedInst := &redroidv1alpha1.RedroidInstance{}
+		err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "maa-sus", Namespace: "default"}, updatedInst)
+		Expect(err).NotTo(HaveOccurred(), "get instance")
+		Expect(updatedInst.Status.Suspended).NotTo(BeNil(), "expected suspended to be set on instance")
+		Expect(updatedInst.Status.Suspended.Actor).To(Equal("task/task-sus"))
 
-// TestRedroidTask_SuspendInstanceWaitsForStop verifies that the controller
-// keeps requeueing without creating a Job when suspended is already set
-// but the instance has not yet reached phase=Stopped.
-func TestRedroidTask_SuspendInstanceWaitsForStop(t *testing.T) {
-	scheme := newTestScheme(t)
-	// Instance is Running but has suspended already set.
-	inst := makeRunningInstance("maa-waits", 0, "10.0.0.1:5555")
-	inst.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
-		Actor:  "task/task-waits",
-		Reason: "reserved for one-shot task task-waits",
-	}
-	task := makeTaskSuspendInstance("task-waits", []string{"maa-waits"})
+		// Job must NOT have been created yet.
+		jobList := &batchv1.JobList{}
+		err = fakeClient.List(context.Background(), jobList)
+		Expect(err).NotTo(HaveOccurred(), "list jobs")
+		Expect(jobList.Items).To(BeEmpty(), "expected 0 jobs (instance not stopped yet)")
+	})
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
-		WithObjects(inst, task).Build()
+	It("keeps requeueing without creating Job when instance is suspended but not Stopped", func() {
+		// Instance is Running but has suspended already set.
+		inst := makeRunningInstance("maa-waits", 0, "10.0.0.1:5555")
+		inst.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
+			Actor:  "task/task-waits",
+			Reason: "reserved for one-shot task task-waits",
+		}
+		task := makeTaskSuspendInstance("task-waits", []string{"maa-waits"})
 
-	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
-	reconcileTask(t, r, "task-waits") // add finalizer
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
+			WithObjects(inst, task).Build()
 
-	res := reconcileTask(t, r, "task-waits") // should requeue, no job
-	if res.RequeueAfter == 0 {
-		t.Error("expected RequeueAfter > 0 while instance is still Running")
-	}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		reconcileTask(r, "task-waits") // add finalizer
 
-	jobList := &batchv1.JobList{}
-	if err := fakeClient.List(context.Background(), jobList); err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobList.Items) != 0 {
-		t.Errorf("job must not be created before instance is Stopped; got %d job(s)", len(jobList.Items))
-	}
-}
+		res := reconcileTask(r, "task-waits") // should requeue, no job
+		Expect(res.RequeueAfter).NotTo(Equal(0), "expected RequeueAfter > 0 while instance is still Running")
 
-// TestRedroidTask_SuspendInstanceCreatesJobWhenStopped verifies that the Job is
-// created once the instance is both suspended-set AND phase=Stopped.
-func TestRedroidTask_SuspendInstanceCreatesJobWhenStopped(t *testing.T) {
-	scheme := newTestScheme(t)
-	inst := makeStoppedInstance("maa-ready", 0)
-	inst.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
-		Actor:  "task/task-ready",
-		Reason: "reserved for one-shot task task-ready",
-	}
-	task := makeTaskSuspendInstance("task-ready", []string{"maa-ready"})
+		jobList := &batchv1.JobList{}
+		err := fakeClient.List(context.Background(), jobList)
+		Expect(err).NotTo(HaveOccurred(), "list jobs")
+		Expect(jobList.Items).To(BeEmpty(), "job must not be created before instance is Stopped")
+	})
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
-		WithObjects(inst, task).Build()
+	It("creates Job once instance is suspended and Stopped", func() {
+		inst := makeStoppedInstance("maa-ready", 0)
+		inst.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
+			Actor:  "task/task-ready",
+			Reason: "reserved for one-shot task task-ready",
+		}
+		task := makeTaskSuspendInstance("task-ready", []string{"maa-ready"})
 
-	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
-	reconcileTask(t, r, "task-ready") // add finalizer
-	reconcileTask(t, r, "task-ready") // create Job
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
+			WithObjects(inst, task).Build()
 
-	jobList := &batchv1.JobList{}
-	if err := fakeClient.List(context.Background(), jobList); err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobList.Items) != 1 {
-		t.Errorf("expected 1 job after instance stopped, got %d", len(jobList.Items))
-	}
-}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		reconcileTask(r, "task-ready") // add finalizer
+		reconcileTask(r, "task-ready") // create Job
 
-// TestRedroidTask_SuspendInstanceClearsAfterJobDone verifies that
-// status.suspended is cleared from the instance once the Job finishes.
-func TestRedroidTask_SuspendInstanceClearsAfterJobDone(t *testing.T) {
-	scheme := newTestScheme(t)
-	inst := makeStoppedInstance("maa-done", 0)
-	inst.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
-		Actor:  "task/task-done",
-		Reason: "reserved for one-shot task task-done",
-	}
-	task := makeTaskSuspendInstance("task-done", []string{"maa-done"})
+		jobList := &batchv1.JobList{}
+		err := fakeClient.List(context.Background(), jobList)
+		Expect(err).NotTo(HaveOccurred(), "list jobs")
+		Expect(jobList.Items).To(HaveLen(1), "expected 1 job after instance stopped")
+	})
 
-	// Create a finished Job manually.
-	trueVal := true
-	finishedJob := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "task-done-maa-done",
-			Namespace: "default",
-			Labels:    map[string]string{"app.kubernetes.io/managed-by": "redroid-operator"},
-		},
-		Status: batchv1.JobStatus{
-			Conditions: []batchv1.JobCondition{
-				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+	It("clears status.suspended after Job is done", func() {
+		inst := makeStoppedInstance("maa-done", 0)
+		inst.Status.Suspended = &redroidv1alpha1.SuspendedStatus{
+			Actor:  "task/task-done",
+			Reason: "reserved for one-shot task task-done",
+		}
+		task := makeTaskSuspendInstance("task-done", []string{"maa-done"})
+
+		// Create a finished Job manually.
+		trueVal := true
+		finishedJob := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "task-done-maa-done",
+				Namespace: "default",
+				Labels:    map[string]string{"app.kubernetes.io/managed-by": "redroid-operator"},
 			},
-			CompletionTime: &metav1.Time{},
-		},
-	}
-	// Set controller reference equivalent field for ownership.
-	finishedJob.OwnerReferences = []metav1.OwnerReference{
-		{
-			APIVersion: "redroid.isning.moe/v1alpha1",
-			Kind:       "RedroidTask",
-			Name:       task.Name,
-			Controller: &trueVal,
-		},
-	}
+			Status: batchv1.JobStatus{
+				Conditions: []batchv1.JobCondition{
+					{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+				},
+				CompletionTime: &metav1.Time{},
+			},
+		}
+		// Set controller reference equivalent field for ownership.
+		finishedJob.OwnerReferences = []metav1.OwnerReference{
+			{
+				APIVersion: "redroid.isning.moe/v1alpha1",
+				Kind:       "RedroidTask",
+				Name:       task.Name,
+				Controller: &trueVal,
+			},
+		}
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
-		WithObjects(inst, task, finishedJob).Build()
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
+			WithObjects(inst, task, finishedJob).Build()
 
-	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
-	reconcileTask(t, r, "task-done") // add finalizer
-	reconcileTask(t, r, "task-done") // detect finished job → clear suspended
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		reconcileTask(r, "task-done") // add finalizer
+		reconcileTask(r, "task-done") // detect finished job → clear suspended
 
-	updatedInst := &redroidv1alpha1.RedroidInstance{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "maa-done", Namespace: "default"}, updatedInst); err != nil {
-		t.Fatalf("get instance: %v", err)
-	}
-	if updatedInst.Status.Suspended != nil {
-		t.Errorf("expected suspended to be cleared after Job completion, got %+v",
-			updatedInst.Status.Suspended)
-	}
-}
+		updatedInst := &redroidv1alpha1.RedroidInstance{}
+		err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "maa-done", Namespace: "default"}, updatedInst)
+		Expect(err).NotTo(HaveOccurred(), "get instance")
+		Expect(updatedInst.Status.Suspended).To(BeNil(), "expected suspended to be cleared after Job completion")
+	})
+})

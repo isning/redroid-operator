@@ -7,8 +7,9 @@ package controller_test
 
 import (
 	"context"
-	"testing"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,167 +46,134 @@ func makeTaskWakeInstance(name string, instances []string) *redroidv1alpha1.Redr
 	return task
 }
 
-// TestRedroidTask_WakeInstanceSetsWoken verifies that when a Job does not yet
-// exist the task controller sets status.woken on the instance before creating
-// the Job, then requeues without creating the Job.
-func TestRedroidTask_WakeInstanceSetsWoken(t *testing.T) {
-	scheme := newTestScheme(t)
-	inst := makeSuspendedSpecInstance("maa-wk", 0)
-	task := makeTaskWakeInstance("task-wk", []string{"maa-wk"})
+var _ = Describe("RedroidTask WakeInstance", func() {
+	var (
+		scheme = newTestScheme()
+	)
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
-		WithObjects(inst, task).Build()
+	It("sets status.woken on instance before creating Job and requeues", func() {
+		inst := makeSuspendedSpecInstance("maa-wk", 0)
+		task := makeTaskWakeInstance("task-wk", []string{"maa-wk"})
 
-	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
+			WithObjects(inst, task).Build()
 
-	// 1st reconcile: adds finalizer.
-	reconcileTask(t, r, "task-wk")
-	// 2nd reconcile: should set woken on instance and requeue.
-	res := reconcileTask(t, r, "task-wk")
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
 
-	if res.RequeueAfter == 0 {
-		t.Error("expected RequeueAfter > 0 while waiting for instance to start")
-	}
+		// 1st reconcile: adds finalizer.
+		reconcileTask(r, "task-wk")
+		// 2nd reconcile: should set woken on instance and requeue.
+		res := reconcileTask(r, "task-wk")
 
-	// Instance should now have woken set.
-	updatedInst := &redroidv1alpha1.RedroidInstance{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "maa-wk", Namespace: "default"}, updatedInst); err != nil {
-		t.Fatalf("get instance: %v", err)
-	}
-	if updatedInst.Status.Woken == nil {
-		t.Fatal("expected woken to be set on instance")
-	}
-	if updatedInst.Status.Woken.Actor != "task/task-wk" {
-		t.Errorf("expected actor 'task/task-wk', got %q", updatedInst.Status.Woken.Actor)
-	}
+		Expect(res.RequeueAfter).NotTo(Equal(0), "expected RequeueAfter > 0 while waiting for instance to start")
 
-	// Job must NOT have been created yet.
-	jobList := &batchv1.JobList{}
-	if err := fakeClient.List(context.Background(), jobList); err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobList.Items) != 0 {
-		t.Errorf("expected 0 jobs (instance not running yet), got %d", len(jobList.Items))
-	}
-}
+		// Instance should now have woken set.
+		updatedInst := &redroidv1alpha1.RedroidInstance{}
+		err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "maa-wk", Namespace: "default"}, updatedInst)
+		Expect(err).NotTo(HaveOccurred(), "get instance")
+		Expect(updatedInst.Status.Woken).NotTo(BeNil(), "expected woken to be set on instance")
+		Expect(updatedInst.Status.Woken.Actor).To(Equal("task/task-wk"))
 
-// TestRedroidTask_WakeInstanceWaitsForRunning verifies that the controller
-// keeps requeueing without creating a Job when woken is already set but the
-// instance has not yet reached phase=Running.
-func TestRedroidTask_WakeInstanceWaitsForRunning(t *testing.T) {
-	scheme := newTestScheme(t)
-	// Instance is Stopped but has woken already set.
-	inst := makeSuspendedSpecInstance("maa-wkwait", 0)
-	inst.Status.Woken = &redroidv1alpha1.WokenStatus{
-		Actor:  "task/task-wkwait",
-		Reason: "on-demand wake for one-shot task task-wkwait",
-	}
-	task := makeTaskWakeInstance("task-wkwait", []string{"maa-wkwait"})
+		// Job must NOT have been created yet.
+		jobList := &batchv1.JobList{}
+		err = fakeClient.List(context.Background(), jobList)
+		Expect(err).NotTo(HaveOccurred(), "list jobs")
+		Expect(jobList.Items).To(BeEmpty(), "expected 0 jobs (instance not running yet)")
+	})
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
-		WithObjects(inst, task).Build()
+	It("keeps requeueing without creating Job when woken is set but not Running", func() {
+		// Instance is Stopped but has woken already set.
+		inst := makeSuspendedSpecInstance("maa-wkwait", 0)
+		inst.Status.Woken = &redroidv1alpha1.WokenStatus{
+			Actor:  "task/task-wkwait",
+			Reason: "on-demand wake for one-shot task task-wkwait",
+		}
+		task := makeTaskWakeInstance("task-wkwait", []string{"maa-wkwait"})
 
-	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
-	reconcileTask(t, r, "task-wkwait") // add finalizer
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
+			WithObjects(inst, task).Build()
 
-	res := reconcileTask(t, r, "task-wkwait") // should requeue, no job
-	if res.RequeueAfter == 0 {
-		t.Error("expected RequeueAfter > 0 while instance is still Stopped")
-	}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		reconcileTask(r, "task-wkwait") // add finalizer
 
-	jobList := &batchv1.JobList{}
-	if err := fakeClient.List(context.Background(), jobList); err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobList.Items) != 0 {
-		t.Errorf("job must not be created before instance is Running; got %d job(s)", len(jobList.Items))
-	}
-}
+		res := reconcileTask(r, "task-wkwait") // should requeue, no job
+		Expect(res.RequeueAfter).NotTo(Equal(0), "expected RequeueAfter > 0 while instance is still Stopped")
 
-// TestRedroidTask_WakeInstanceCreatesJobWhenRunning verifies that the Job is
-// created once the instance is both woken-set AND phase=Running.
-func TestRedroidTask_WakeInstanceCreatesJobWhenRunning(t *testing.T) {
-	scheme := newTestScheme(t)
-	inst := makeRunningInstance("maa-wkready", 0, "10.0.0.2:5555")
-	inst.Spec.Suspend = true // spec says suspended, but woken overrides it
-	inst.Status.Woken = &redroidv1alpha1.WokenStatus{
-		Actor:  "task/task-wkready",
-		Reason: "on-demand wake for one-shot task task-wkready",
-	}
-	task := makeTaskWakeInstance("task-wkready", []string{"maa-wkready"})
+		jobList := &batchv1.JobList{}
+		err := fakeClient.List(context.Background(), jobList)
+		Expect(err).NotTo(HaveOccurred(), "list jobs")
+		Expect(jobList.Items).To(BeEmpty(), "job must not be created before instance is Running")
+	})
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
-		WithObjects(inst, task).Build()
+	It("creates Job once instance is woken-set and Running", func() {
+		inst := makeRunningInstance("maa-wkready", 0, "10.0.0.2:5555")
+		inst.Spec.Suspend = true // spec says suspended, but woken overrides it
+		inst.Status.Woken = &redroidv1alpha1.WokenStatus{
+			Actor:  "task/task-wkready",
+			Reason: "on-demand wake for one-shot task task-wkready",
+		}
+		task := makeTaskWakeInstance("task-wkready", []string{"maa-wkready"})
 
-	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
-	reconcileTask(t, r, "task-wkready") // add finalizer
-	reconcileTask(t, r, "task-wkready") // create Job
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
+			WithObjects(inst, task).Build()
 
-	jobList := &batchv1.JobList{}
-	if err := fakeClient.List(context.Background(), jobList); err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobList.Items) != 1 {
-		t.Errorf("expected 1 job after instance running, got %d", len(jobList.Items))
-	}
-}
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		reconcileTask(r, "task-wkready") // add finalizer
+		reconcileTask(r, "task-wkready") // create Job
 
-// TestRedroidTask_WakeInstanceClearsWokenAfterJob verifies that status.woken
-// is cleared from the instance once the Job finishes (allowing instance to
-// return to spec.suspend state).
-func TestRedroidTask_WakeInstanceClearsWokenAfterJob(t *testing.T) {
-	scheme := newTestScheme(t)
-	inst := makeRunningInstance("maa-wkdone", 0, "10.0.0.2:5555")
-	inst.Spec.Suspend = true
-	inst.Status.Woken = &redroidv1alpha1.WokenStatus{
-		Actor:  "task/task-wkdone",
-		Reason: "on-demand wake for one-shot task task-wkdone",
-	}
-	task := makeTaskWakeInstance("task-wkdone", []string{"maa-wkdone"})
+		jobList := &batchv1.JobList{}
+		err := fakeClient.List(context.Background(), jobList)
+		Expect(err).NotTo(HaveOccurred(), "list jobs")
+		Expect(jobList.Items).To(HaveLen(1), "expected 1 job after instance running")
+	})
 
-	// Create a finished Job manually.
-	trueVal := true
-	finishedJob := &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      "task-wkdone-maa-wkdone",
-			Namespace: "default",
-			Labels:    map[string]string{"app.kubernetes.io/managed-by": "redroid-operator"},
-		},
-		Status: batchv1.JobStatus{
-			Conditions: []batchv1.JobCondition{
-				{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+	It("clears status.woken from instance once Job finishes", func() {
+		inst := makeRunningInstance("maa-wkdone", 0, "10.0.0.2:5555")
+		inst.Spec.Suspend = true
+		inst.Status.Woken = &redroidv1alpha1.WokenStatus{
+			Actor:  "task/task-wkdone",
+			Reason: "on-demand wake for one-shot task task-wkdone",
+		}
+		task := makeTaskWakeInstance("task-wkdone", []string{"maa-wkdone"})
+
+		// Create a finished Job manually.
+		trueVal := true
+		finishedJob := &batchv1.Job{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "task-wkdone-maa-wkdone",
+				Namespace: "default",
+				Labels:    map[string]string{"app.kubernetes.io/managed-by": "redroid-operator"},
 			},
-			CompletionTime: &metav1.Time{},
-		},
-	}
-	finishedJob.OwnerReferences = []metav1.OwnerReference{
-		{
-			APIVersion: "redroid.isning.moe/v1alpha1",
-			Kind:       "RedroidTask",
-			Name:       task.Name,
-			Controller: &trueVal,
-		},
-	}
+			Status: batchv1.JobStatus{
+				Conditions: []batchv1.JobCondition{
+					{Type: batchv1.JobComplete, Status: corev1.ConditionTrue},
+				},
+				CompletionTime: &metav1.Time{},
+			},
+		}
+		finishedJob.OwnerReferences = []metav1.OwnerReference{
+			{
+				APIVersion: "redroid.isning.moe/v1alpha1",
+				Kind:       "RedroidTask",
+				Name:       task.Name,
+				Controller: &trueVal,
+			},
+		}
 
-	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
-		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
-		WithObjects(inst, task, finishedJob).Build()
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
+			WithObjects(inst, task, finishedJob).Build()
 
-	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
-	reconcileTask(t, r, "task-wkdone") // add finalizer
-	reconcileTask(t, r, "task-wkdone") // detect finished job → clear woken
+		r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+		reconcileTask(r, "task-wkdone") // add finalizer
+		reconcileTask(r, "task-wkdone") // detect finished job → clear woken
 
-	updatedInst := &redroidv1alpha1.RedroidInstance{}
-	if err := fakeClient.Get(context.Background(),
-		types.NamespacedName{Name: "maa-wkdone", Namespace: "default"}, updatedInst); err != nil {
-		t.Fatalf("get instance: %v", err)
-	}
-	if updatedInst.Status.Woken != nil {
-		t.Errorf("expected woken to be cleared after Job completion, got %+v",
-			updatedInst.Status.Woken)
-	}
-}
+		updatedInst := &redroidv1alpha1.RedroidInstance{}
+		err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "maa-wkdone", Namespace: "default"}, updatedInst)
+		Expect(err).NotTo(HaveOccurred(), "get instance")
+		Expect(updatedInst.Status.Woken).To(BeNil(), "expected woken to be cleared after Job completion")
+	})
+})
