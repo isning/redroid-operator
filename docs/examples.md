@@ -4,9 +4,9 @@ Real-world usage patterns for redroid-operator.  Each example is self-contained 
 
 ---
 
-## Example 1 — MAA Daily Automation (Arknights Assistant)
+## Example 1 — Daily Automation
 
-The canonical use case: run [MAA](https://github.com/MaaAssistantArknights/MaaAssistantArknights) automatically every morning against one or more Arknights accounts, each living in its own overlay partition.
+The canonical use case: run a game automation bot automatically every morning against one or more game accounts, each living in its own overlay partition.
 
 ### Storage
 
@@ -44,7 +44,7 @@ Each account gets its own `RedroidInstance` at a unique `spec.index`.  They shar
 apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
-  name: maa-0
+  name: android-0
   namespace: default
 spec:
   index: 0
@@ -56,7 +56,7 @@ spec:
 apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
-  name: maa-1
+  name: android-1
   namespace: default
 spec:
   index: 1
@@ -67,27 +67,22 @@ spec:
   suspend: false   # set true to free resources when account is not in use
 ```
 
-### MAA config
+### Task config
 
 ```yaml
-# maa-config.yaml
+# task-config.yaml
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: maa-config
+  name: task-config
   namespace: default
 data:
-  maa-config.json: |
+  task-config.json: |
     {
-      "adb": {
-        "adb_path": "adb",
-        "address": "127.0.0.1:5555",
-        "config": {}
-      },
       "tasks": [
         { "type": "StartUp" },
-        { "type": "Infrast" },
-        { "type": "Fight", "stage": "1-7" }
+        { "type": "Main" },
+        { "type": "Finish" }
       ]
     }
 ```
@@ -95,30 +90,30 @@ data:
 ### Daily task (CronJob)
 
 ```yaml
-# maa-daily-task.yaml
+# daily-task.yaml
 apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
-  name: maa-daily
+  name: daily
   namespace: default
 spec:
   schedule: "0 4 * * *"     # 04:00 every day
   timezone: "Asia/Shanghai"
 
   instances:
-    - name: maa-0
-    - name: maa-1            # comment out if maa-1's spec.suspend: true
+    - name: android-0
+    - name: android-1            # comment out if android-1's spec.suspend: true
 
   integrations:
-    - name: maa-cli
-      image: ghcr.io/isning/maa-cli-debian:latest
+    - name: bot
+      image: ghcr.io/example/game-bot:latest
       imagePullPolicy: Always
-      command: ["maa"]
-      args: ["run", "--config", "/etc/maa/maa-config.json"]
+      command: ["game-bot"]
+      args: ["run", "--config", "/etc/bot/task-config.json"]
       configs:
-        - configMapName: maa-config
-          key: maa-config.json
-          mountPath: /etc/maa/maa-config.json
+        - configMapName: task-config
+          key: task-config.json
+          mountPath: /etc/bot/task-config.json
 
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3
@@ -128,19 +123,19 @@ spec:
 ```bash
 kubectl apply -f storage.yaml
 kubectl apply -f redroid-instances.yaml
-kubectl apply -f maa-config.yaml
-kubectl apply -f maa-daily-task.yaml
+kubectl apply -f task-config.yaml
+kubectl apply -f daily-task.yaml
 
 # Watch the daily run
 kubectl get redroidtasks -w
-kubectl logs -l redroid.isning.moe/task=maa-daily -c maa-cli -f
+kubectl logs -l redroid.isning.moe/task=daily -c bot -f
 ```
 
 ---
 
 ## Example 2 — On-Demand Wake (`wakeInstance`)
 
-Run MAA against an instance that is normally kept suspended (`spec.suspend: true`) — e.g. a second account that you only want to run on manual trigger.
+Run a task against an instance that is normally kept suspended (`spec.suspend: true`) — e.g. a second account that you only want to run on manual trigger.
 
 `wakeInstance: true` tells the task controller to:
 1. Set `status.woken` on the instance → instance controller starts the Pod.
@@ -156,7 +151,7 @@ The `spec.suspend` field is never modified, so GitOps tools (Flux, Argo CD) see 
 apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
-  name: maa-1
+  name: android-1
   namespace: default
 spec:
   index: 1
@@ -170,43 +165,43 @@ spec:
 ### One-shot wake task
 
 ```yaml
-# maa-wakeinstance-task.yaml
+# wakeinstance-task.yaml
 apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
-  name: maa-wake-run
+  name: wake-run
   namespace: default
 spec:
   # No schedule = one-shot Job (delete-and-recreate to re-run).
   wakeInstance: true   # powers on instances with spec.suspend: true while Job runs
 
   instances:
-    - name: maa-1
+    - name: android-1
 
   integrations:
-    - name: maa-cli
-      image: ghcr.io/isning/maa-cli-debian:latest
+    - name: bot
+      image: ghcr.io/example/game-bot:latest
       imagePullPolicy: Always
-      command: ["maa"]
-      args: ["run", "--config", "/etc/maa/maa-config.json"]
+      command: ["game-bot"]
+      args: ["run", "--config", "/etc/bot/task-config.json"]
       configs:
-        - configMapName: maa-config
-          key: maa-config.json
-          mountPath: /etc/maa/maa-config.json
+        - configMapName: task-config
+          key: task-config.json
+          mountPath: /etc/bot/task-config.json
 
   ttlSecondsAfterFinished: 3600   # auto-clean Job 1 hour after completion
 ```
 
 ```bash
 # Trigger an on-demand run:
-kubectl apply -f maa-wakeinstance-task.yaml
+kubectl apply -f wakeinstance-task.yaml
 
 # Watch execution:
-kubectl get redroidinstances maa-1 -w   # observe Stopped → Running → Stopped
+kubectl get redroidinstances android-1 -w   # observe Stopped → Running → Stopped
 
 # Or re-trigger by deleting and re-applying:
-kubectl delete redroidtask maa-wake-run
-kubectl apply -f maa-wakeinstance-task.yaml
+kubectl delete redroidtask wake-run
+kubectl apply -f wakeinstance-task.yaml
 ```
 
 > **Note:** `wakeInstance` is only meaningful for one-shot tasks (no `spec.schedule`).  For scheduled tasks, instances should be running continuously or managed separately.
@@ -234,7 +229,7 @@ spec:
   suspendInstance: true   # stops instance Pod before Job runs, restarts after
 
   instances:
-    - name: maa-0
+    - name: android-0
 
   integrations:
     - name: backup
@@ -243,7 +238,7 @@ spec:
       args:
         - |
           echo "Instance stopped. Safe to access /data-diff."
-          tar czf /backup/maa-0-$(date +%F).tar.gz /data-diff/0
+          tar czf /backup/android-0-$(date +%F).tar.gz /data-diff/0
       volumeMounts:
         - name: backup-vol
           mountPath: /backup
@@ -296,7 +291,7 @@ kubectl port-forward svc/android-base 5555:5555 &
 adb connect localhost:5555
 
 # Install the game APK, log in, complete first-boot, etc.
-adb install MAA.apk
+adb install Game.apk
 adb shell am start -n com.your.game/.MainActivity
 # ... perform setup ...
 
@@ -320,7 +315,7 @@ data:
     until adb connect "$ADB_ADDRESS"; do sleep 5; done
     adb wait-for-device
     sleep 30
-    adb install /apks/MAA.apk
+    adb install /apks/Game.apk
     echo "[base-init] done"
 ---
 apiVersion: redroid.isning.moe/v1alpha1
@@ -467,7 +462,7 @@ Supply instance-specific credentials (e.g. per-account API tokens stored in sepa
 apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidTask
 metadata:
-  name: maa-daily
+  name: daily
   namespace: default
 spec:
   schedule: "0 4 * * *"
@@ -479,22 +474,22 @@ spec:
         name: corp-proxy-ca
 
   instances:
-    - name: maa-0
+    - name: android-0
       # Per-instance Secret: only this instance's Job gets this volume.
       volumes:
         - name: account-token
           secret:
-            secretName: maa-0-token   # Secret specific to account 0
+            secretName: android-0-token   # Secret specific to account 0
       volumeMounts:
         - name: account-token
           mountPath: /run/secrets/token
           subPath: token
           readOnly: true
-    - name: maa-1
+    - name: android-1
       volumes:
         - name: account-token
           secret:
-            secretName: maa-1-token   # Different Secret for account 1
+            secretName: android-1-token   # Different Secret for account 1
       volumeMounts:
         - name: account-token
           mountPath: /run/secrets/token
@@ -502,9 +497,9 @@ spec:
           readOnly: true
 
   integrations:
-    - name: maa-cli
-      image: ghcr.io/isning/maa-cli-debian:latest
-      command: ["maa"]
+    - name: bot
+      image: ghcr.io/example/game-bot:latest
+      command: ["game-bot"]
       args: ["run", "--token", "/run/secrets/token"]
       # Integration-level mount present in every instance's container.
       volumeMounts:
@@ -513,33 +508,16 @@ spec:
           subPath: ca.crt
           readOnly: true
       configs:
-        - configMapName: maa-config
-          key: maa-config.json
-          mountPath: /etc/maa/maa-config.json
+        - configMapName: task-config
+          key: task-config.json
+          mountPath: /etc/bot/task-config.json
 ```
 
 **Override rule:** if an instance lists a volume with the same name as a task-level entry in `spec.volumes`, the instance definition wins. Reserved volumes (`data-base`, `data-diff`, `dev-dri`) and controller-generated ConfigMap volumes (`cm-*`) cannot be overridden by either task-level or instance-level volumes.
 
 ---
 
-## maa-gitops Reference Layout
+## maa-gitops Reference
 
-The [maa-gitops](https://github.com/isning/maa-gitops) repository puts all the patterns above together in a GitOps-friendly structure managed by Flux:
+For a complete real-world example combining all the patterns above, see the [maa-gitops](https://github.com/isning/maa-gitops) repository.
 
-```
-apps/maa/
-├── kustomization.yaml        # Flux entry point (excludes manual-only files)
-├── redroid-pvc.yaml          # base + diff PVCs
-├── maa-config.yaml           # MAA task configuration (ConfigMap)
-├── redroid-instances.yaml    # maa-0 (running) + maa-1 (suspend: true)
-├── maa-task.yaml             # daily CronJob for running instances
-├── maa-wakeinstance-task.yaml  # on-demand one-shot for maa-1 (wakeInstance)
-├── base-init.yaml            # one-time base layer setup (NOT in kustomization)
-└── base-update.yaml          # daily base APK/resource updater (NOT in kustomization)
-```
-
-Key design decisions:
-- `spec.suspend` is owned by Git — never mutated at runtime.
-- `status.suspended` / `status.woken` are runtime-only — invisible to Flux.
-- `maa-1` keeps `spec.suspend: true` in Git; the `maa-wakeinstance-task` wakes it only for the duration of the Job.
-- `base-init.yaml` and `base-update.yaml` are excluded from `kustomization.yaml` and applied manually to prevent accidental resets.
