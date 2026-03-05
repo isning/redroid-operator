@@ -6,7 +6,7 @@ name: Publish Snapshot CLI
 
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [CI, Snapshot]
     types: [completed]
     branches: [main, master]
 

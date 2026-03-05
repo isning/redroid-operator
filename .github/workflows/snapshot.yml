@@ -173,6 +173,13 @@ jobs:
           helm push dist/redroid-operator-0.0.0-snapshot.tgz oci://${{ env.CHART_REPO }}
           crane tag "${{ env.CHART_REPO }}/redroid-operator:0.0.0-snapshot" main
 
+      - name: Delete old snapshot release and tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete snapshot -y || true
+          git push --delete origin snapshot || true
+
       - name: Upload chart to rolling snapshot pre-release
         uses: softprops/action-gh-release@v2
         with:
@@ -181,6 +188,8 @@ jobs:
           prerelease: true
           body: |
             Rolling snapshot built from `main` — automatically overwritten on every push.
+
+            **Commit SHA1:** ${{ github.sha }}
 
             Install via Helm repo:
                 helm repo add redroid https://isning.github.io/redroid-operator
