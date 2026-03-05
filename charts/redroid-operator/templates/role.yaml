@@ -52,7 +52,7 @@ rules:
 {{- end }}
 {{- if .Values.rbac.create }}
 ---
-{{- /* Leader-election Role — always in the operator's own namespace */ -}}
+{{- /* Leader-election Role — always in the operator's own namespace */}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
