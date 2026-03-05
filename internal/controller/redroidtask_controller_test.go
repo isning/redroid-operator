@@ -236,8 +236,9 @@ func TestRedroidTask_ConfigMountedAsVolume(t *testing.T) {
 	for _, v := range podSpec.Volumes {
 		volumeNames[v.Name] = true
 	}
-	// Volume names are now "cm-<configmap-name>" — one per distinct ConfigMap.
-	for _, wantVol := range []string{"cm-maa-config", "cm-extra-config"} {
+	// Volume names are derived via ConfigMapVolumeName (includes a hash suffix for collision safety).
+	for _, cmName := range []string{"maa-config", "extra-config"} {
+		wantVol := controller.ConfigMapVolumeName(cmName)
 		if !volumeNames[wantVol] {
 			t.Errorf("expected volume %q, got volumes: %v", wantVol, volumeNames)
 		}
@@ -621,4 +622,175 @@ func TestRedroidTask_CronJobUpdatedOnSpecChange(t *testing.T) {
 	if cj.Spec.Suspend == nil || !*cj.Spec.Suspend {
 		t.Errorf("expected CronJob to be suspended after task.Spec.Suspend=true")
 	}
+}
+
+// assertPerInstanceVolumesMerged verifies that per-instance volumes and mounts
+// are correctly merged into a PodSpec: the volume 'inst-secret' must be present
+// with SecretName "instance-secret" (instance definition wins over task-level),
+// and the mount '/etc/secret' must appear on every integration container.
+func assertPerInstanceVolumesMerged(t *testing.T, podSpec corev1.PodSpec) {
+	t.Helper()
+
+	// Volume presence, uniqueness, and instance-wins-over-task precedence.
+	var foundVol *corev1.Volume
+	count := 0
+	for i := range podSpec.Volumes {
+		if podSpec.Volumes[i].Name == "inst-secret" {
+			count++
+			foundVol = &podSpec.Volumes[i]
+		}
+	}
+	if count == 0 {
+		t.Fatalf("expected per-instance volume 'inst-secret', got volumes: %v", podSpec.Volumes)
+	}
+	if count > 1 {
+		t.Errorf("expected exactly one volume named 'inst-secret', got %d", count)
+	}
+	if foundVol.Secret == nil || foundVol.Secret.SecretName != "instance-secret" {
+		t.Errorf("instance volume should win: expected SecretName 'instance-secret', got %+v", foundVol.VolumeSource)
+	}
+
+	// Mount present on every integration container.
+	if len(podSpec.Containers) == 0 {
+		t.Fatal("no integration containers")
+	}
+	for _, c := range podSpec.Containers {
+		found := false
+		for _, vm := range c.VolumeMounts {
+			if vm.MountPath == "/etc/secret" {
+				if vm.Name != "inst-secret" {
+					t.Errorf("container %q: mount '/etc/secret' has wrong Name: got %q, want 'inst-secret'", c.Name, vm.Name)
+				}
+				if !vm.ReadOnly {
+					t.Errorf("container %q: mount '/etc/secret' should be ReadOnly", c.Name)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("container %q missing per-instance mount '/etc/secret'; mounts: %v", c.Name, c.VolumeMounts)
+		}
+	}
+}
+
+// TestRedroidTask_PerInstanceVolumes verifies that per-instance volumes and
+// volumeMounts from InstanceRef are merged into the generated Job's PodSpec.
+func TestRedroidTask_PerInstanceVolumes(t *testing.T) {
+	scheme := newTestScheme(t)
+	inst := makeRunningInstance("maa-0", 0, "10.0.0.1:5555")
+
+	task := &redroidv1alpha1.RedroidTask{
+		ObjectMeta: metav1.ObjectMeta{Name: "task-inst-vol", Namespace: "default"},
+		Spec: redroidv1alpha1.RedroidTaskSpec{
+			Instances: []redroidv1alpha1.InstanceRef{
+				{
+					Name: "maa-0",
+					Volumes: []corev1.Volume{
+						{
+							Name: "inst-secret",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{SecretName: "instance-secret"},
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{Name: "inst-secret", MountPath: "/etc/secret", ReadOnly: true},
+					},
+				},
+			},
+			// Add a conflicting task-level volume with the same name — instance must win.
+			Volumes: []corev1.Volume{
+				{
+					Name: "inst-secret",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{SecretName: "task-secret"},
+					},
+				},
+			},
+			Integrations: []redroidv1alpha1.IntegrationSpec{basicIntegration(), {
+				Name:  "second-integration",
+				Image: "sidecar:latest",
+			}},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
+		WithObjects(inst, task).Build()
+
+	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+	reconcileTask(t, r, "task-inst-vol")
+	reconcileTask(t, r, "task-inst-vol")
+
+	jobList := &batchv1.JobList{}
+	if err := fakeClient.List(context.Background(), jobList); err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	if len(jobList.Items) == 0 {
+		t.Fatal("no jobs created")
+	}
+	podSpec := jobList.Items[0].Spec.Template.Spec
+	assertPerInstanceVolumesMerged(t, podSpec)
+}
+
+// TestRedroidTask_PerInstanceVolumes_CronJob mirrors TestRedroidTask_PerInstanceVolumes
+// but targets the CronJob reconciliation path (non-empty Schedule).
+func TestRedroidTask_PerInstanceVolumes_CronJob(t *testing.T) {
+	scheme := newTestScheme(t)
+	inst := makeRunningInstance("maa-0", 0, "10.0.0.1:5555")
+
+	task := &redroidv1alpha1.RedroidTask{
+		ObjectMeta: metav1.ObjectMeta{Name: "task-inst-vol-cron", Namespace: "default"},
+		Spec: redroidv1alpha1.RedroidTaskSpec{
+			Schedule: "0 4 * * *", // non-empty → controller creates a CronJob
+			Instances: []redroidv1alpha1.InstanceRef{
+				{
+					Name: "maa-0",
+					Volumes: []corev1.Volume{
+						{
+							Name: "inst-secret",
+							VolumeSource: corev1.VolumeSource{
+								Secret: &corev1.SecretVolumeSource{SecretName: "instance-secret"},
+							},
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{Name: "inst-secret", MountPath: "/etc/secret", ReadOnly: true},
+					},
+				},
+			},
+			// Conflicting task-level volume — instance must win.
+			Volumes: []corev1.Volume{
+				{
+					Name: "inst-secret",
+					VolumeSource: corev1.VolumeSource{
+						Secret: &corev1.SecretVolumeSource{SecretName: "task-secret"},
+					},
+				},
+			},
+			Integrations: []redroidv1alpha1.IntegrationSpec{basicIntegration(), {
+				Name:  "second-integration",
+				Image: "sidecar:latest",
+			}},
+		},
+	}
+
+	fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+		WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}, &redroidv1alpha1.RedroidTask{}).
+		WithObjects(inst, task).Build()
+
+	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
+	reconcileTask(t, r, "task-inst-vol-cron")
+	reconcileTask(t, r, "task-inst-vol-cron")
+
+	cronList := &batchv1.CronJobList{}
+	if err := fakeClient.List(context.Background(), cronList); err != nil {
+		t.Fatalf("list cronjobs: %v", err)
+	}
+	if len(cronList.Items) == 0 {
+		t.Fatal("no cronjobs created")
+	}
+	podSpec := cronList.Items[0].Spec.JobTemplate.Spec.Template.Spec
+	assertPerInstanceVolumesMerged(t, podSpec)
 }

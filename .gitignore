@@ -10,3 +10,5 @@ coverage.out
 coverage.html
 
 .pre-commit-config.yaml
+
+docs/generated/

@@ -132,6 +132,23 @@ For each integration container the controller injects:
 
 ConfigMap keys from `spec.integrations[].configs` are mounted as volumes at the specified `mountPath`.
 
+### Volume merge semantics
+
+The controller builds the Pod `volumes` list in four layers, with strict override rules:
+
+| Origin | Source | Overrideable? |
+|---|---|---|
+| **Reserved** | `data-base`, `data-diff`, `dev-dri` (overlayfs + GPU) | Never |
+| **Generated** | `cm-<hash>` volumes auto-created from `spec.integrations[].configs` | Never |
+| **Task-level** | `spec.volumes` | Yes — by instance-level volumes with the same name |
+| **Instance-level** | `spec.instances[].volumes` | Replaces task-level entry of the same name; ignored if reserved/generated |
+
+The same precedence applies to `VolumeMounts` per integration container: `spec.integrations[].volumeMounts` are the base, then config-derived mounts, then `spec.instances[].volumeMounts` (instance wins on `mountPath` collision).
+
+#### ConfigMap volume naming
+
+ConfigMap volumes are named via `ConfigMapVolumeName(configMapName)`: the name is lowercased, dots and underscores replaced with hyphens, and a deterministic 8-character SHA-256 suffix (derived from the original name) is **always** appended.  This guarantees that two ConfigMap names that normalise to the same string (e.g. `foo.bar` and `foo-bar`) still produce distinct volume names, and that the final volume name never exceeds the 63-character DNS label (name) limit imposed on Kubernetes resource names.
+
 ## Temporary Suspend / Wake (`status.suspended` / `status.woken`)
 
 A key design goal is compatibility with GitOps tools. If the controller modified `spec.suspend` when automatically pausing an instance for a task, Flux/Argo CD would continuously revert the change, causing reconciliation fights.

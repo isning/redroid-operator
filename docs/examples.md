@@ -459,6 +459,69 @@ spec:
 
 ---
 
+## Example 8 — Per-Instance Volumes and Secrets
+
+Supply instance-specific credentials (e.g. per-account API tokens stored in separate Secrets) using `spec.instances[].volumes` and `spec.instances[].volumeMounts`.
+
+```yaml
+apiVersion: redroid.io/v1alpha1
+kind: RedroidTask
+metadata:
+  name: maa-daily
+  namespace: default
+spec:
+  schedule: "0 4 * * *"
+
+  # Task-level extra volume available to every instance.
+  volumes:
+    - name: shared-proxy-cert
+      configMap:
+        name: corp-proxy-ca
+
+  instances:
+    - name: maa-0
+      # Per-instance Secret: only this instance's Job gets this volume.
+      volumes:
+        - name: account-token
+          secret:
+            secretName: maa-0-token   # Secret specific to account 0
+      volumeMounts:
+        - name: account-token
+          mountPath: /run/secrets/token
+          subPath: token
+          readOnly: true
+    - name: maa-1
+      volumes:
+        - name: account-token
+          secret:
+            secretName: maa-1-token   # Different Secret for account 1
+      volumeMounts:
+        - name: account-token
+          mountPath: /run/secrets/token
+          subPath: token
+          readOnly: true
+
+  integrations:
+    - name: maa-cli
+      image: ghcr.io/isning/maa-cli-debian:latest
+      command: ["maa"]
+      args: ["run", "--token", "/run/secrets/token"]
+      # Integration-level mount present in every instance's container.
+      volumeMounts:
+        - name: shared-proxy-cert
+          mountPath: /etc/ssl/certs/corp-ca.crt
+          subPath: ca.crt
+          readOnly: true
+      configs:
+        - configMapName: maa-config
+          key: maa-config.json
+          mountPath: /etc/maa/maa-config.json
+```
+
+**Override rule:** if an instance lists a volume with the same name as a task-level entry in `spec.volumes`, the instance definition wins. Reserved volumes (`data-base`, `data-diff`, `dev-dri`) and controller-generated ConfigMap volumes (`cm-*`) cannot be overridden by either task-level or instance-level volumes.
+
+---
+
 ## maa-gitops Reference Layout
 
 The [maa-gitops](https://github.com/isning/maa-gitops) repository puts all the patterns above together in a GitOps-friendly structure managed by Flux:

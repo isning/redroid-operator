@@ -9,6 +9,22 @@ import (
 type InstanceRef struct {
 	// Name is the RedroidInstance name in the same namespace.
 	Name string `json:"name"`
+
+	// Volumes adds additional volumes specific to this instance's Job Pod.
+	// These are merged with task-level spec.volumes; an instance volume overrides
+	// only user-defined task-level volumes with the same name. Reserved volumes
+	// (data-base, data-diff, dev-dri) and controller-generated ConfigMap volumes
+	// (cm-* prefix) are never overrideable — those retain precedence regardless.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+
+	// VolumeMounts adds extra volume mounts into every integration container
+	// for this instance only. Use together with instance-level Volumes to
+	// mount instance-specific ConfigMaps, Secrets, etc.
+	// +optional
+	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 }
 
 // ConfigFile mounts a single key from a ConfigMap as a file inside the integration container.
@@ -59,12 +75,6 @@ type IntegrationSpec struct {
 	// +optional
 	VolumeMounts []corev1.VolumeMount `json:"volumeMounts,omitempty"`
 
-	// ServiceAccountName is the ServiceAccount whose token is mounted into this container.
-	// Required when the integration needs to call the Kubernetes API (e.g. to patch
-	// status.suspended on other RedroidInstances). Defaults to the namespace default SA.
-	// +optional
-	ServiceAccountName string `json:"serviceAccountName,omitempty"`
-
 	// SecurityContext sets per-container security options.
 	// +optional
 	SecurityContext *corev1.SecurityContext `json:"securityContext,omitempty"`
@@ -75,11 +85,14 @@ type IntegrationSpec struct {
 }
 
 // RedroidTaskSpec defines the desired state of RedroidTask.
+// +kubebuilder:validation:XValidation:rule="!(self.suspendInstance == true && self.wakeInstance == true)",message="suspendInstance and wakeInstance are mutually exclusive"
 type RedroidTaskSpec struct {
 	// Instances lists the RedroidInstance resources that this task targets.
 	// Each instance runs its own Job/CronJob execution, inheriting
 	// the instance's image, overlayfs PVCs, and GPU settings.
 	// +kubebuilder:validation:MinItems=1
+	// +listType=map
+	// +listMapKey=name
 	Instances []InstanceRef `json:"instances"`
 
 	// Schedule is a Cron expression for recurring execution (e.g. "0 4 * * *").
@@ -159,7 +172,24 @@ type RedroidTaskSpec struct {
 	// Integrations is the ordered list of tool containers executed per instance.
 	// They run as regular containers alongside the redroid sidecar, sharing localhost.
 	// +kubebuilder:validation:MinItems=1
+	// +listType=map
+	// +listMapKey=name
 	Integrations []IntegrationSpec `json:"integrations"`
+
+	// Volumes defines additional volumes to attach to the Job Pod.
+	// Use this together with integration VolumeMounts to mount arbitrary volume
+	// sources (Secrets, projected ConfigMaps, emptyDir, etc.) that are not covered
+	// by the per-key Configs shorthand.
+	// +optional
+	// +listType=map
+	// +listMapKey=name
+	Volumes []corev1.Volume `json:"volumes,omitempty"`
+
+	// ServiceAccountName is the name of the ServiceAccount to use for all Pods
+	// created by this task. Applies at the PodSpec level and is shared by every
+	// integration container. If empty, the namespace default ServiceAccount is used.
+	// +optional
+	ServiceAccountName string `json:"serviceAccountName,omitempty"`
 
 	// ImagePullSecrets applies to all integration containers in this task.
 	// +optional
