@@ -1,0 +1,38 @@
+name: Publish Snapshot CLI
+
+# Triggered when the CI workflow completes on main/master.
+# Downloads the snapshot-cli artifacts built by CI and attaches them to
+# the rolling 'snapshot' pre-release — no rebuild needed.
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main, master]
+
+permissions:
+  contents: write   # update rolling pre-release
+  actions: read     # download artifacts from the triggering workflow run
+
+jobs:
+  publish:
+    name: Attach snapshot CLI to pre-release
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Download snapshot-cli artifacts from CI run
+        uses: actions/download-artifact@v8
+        with:
+          pattern: snapshot-cli-*
+          path: artifacts/
+          merge-multiple: true
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Attach to rolling snapshot pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: snapshot
+          name: Snapshot (latest main)
+          prerelease: true
+          files: artifacts/*
