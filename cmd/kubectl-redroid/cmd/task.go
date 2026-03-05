@@ -225,8 +225,8 @@ Example:
 // buildJobFromCronJob creates a new Job from a CronJob's job template.
 func buildJobFromCronJob(cj *batchv1.CronJob, name string) *batchv1.Job {
 	annotations := map[string]string{
-		"redroid.io/triggered-by": "kubectl-redroid",
-		"redroid.io/cronjob":      cj.Name,
+		"redroid.isning.moe/triggered-by": "kubectl-redroid",
+		"redroid.isning.moe/cronjob":      cj.Name,
 	}
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{
@@ -270,9 +270,9 @@ Examples:
 			ns := resolvedNamespace()
 			taskName := args[0]
 
-			selector := labels.Set{"redroid.io/task": taskName}
+			selector := labels.Set{"redroid.isning.moe/task": taskName}
 			if instance != "" {
-				selector["redroid.io/instance"] = instance
+				selector["redroid.isning.moe/instance"] = instance
 			}
 
 			jobList, err := cl.kube.BatchV1().Jobs(ns).List(context.Background(), metav1.ListOptions{

@@ -13,14 +13,14 @@ metadata:
     app.kubernetes.io/part-of: redroid-operator
 rules:
   # Read/write RedroidInstances (list, describe, suspend, resume)
-  - apiGroups: [redroid.io]
+  - apiGroups: [redroid.isning.moe]
     resources: [redroidinstances]
     verbs: [get, list, watch]
-  - apiGroups: [redroid.io]
+  - apiGroups: [redroid.isning.moe]
     resources: [redroidinstances/status]
     verbs: [get, update, patch]
   # Read RedroidTasks (list, describe, trigger)
-  - apiGroups: [redroid.io]
+  - apiGroups: [redroid.isning.moe]
     resources: [redroidtasks]
     verbs: [get, list, watch]
   # Pod access for logs (via label selector, not pod name)

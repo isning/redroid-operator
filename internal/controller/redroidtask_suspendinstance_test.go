@@ -180,7 +180,7 @@ func TestRedroidTask_SuspendInstanceClearsAfterJobDone(t *testing.T) {
 	// Set controller reference equivalent field for ownership.
 	finishedJob.OwnerReferences = []metav1.OwnerReference{
 		{
-			APIVersion: "redroid.io/v1alpha1",
+			APIVersion: "redroid.isning.moe/v1alpha1",
 			Kind:       "RedroidTask",
 			Name:       task.Name,
 			Controller: &trueVal,

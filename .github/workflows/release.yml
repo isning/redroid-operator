@@ -101,9 +101,9 @@ jobs:
       - name: Combine CRDs into single file for release asset
         run: |
           {
-            cat charts/redroid-operator/crds/redroid.io_redroidinstances.yaml
+            cat charts/redroid-operator/crds/redroid.isning.moe_redroidinstances.yaml
             echo "---"
-            cat charts/redroid-operator/crds/redroid.io_redroidtasks.yaml
+            cat charts/redroid-operator/crds/redroid.isning.moe_redroidtasks.yaml
           } > dist/crds.yaml
 
       - name: Upload chart and CRDs as artifacts

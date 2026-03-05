@@ -184,7 +184,7 @@ func TestRedroidTask_WakeInstanceClearsWokenAfterJob(t *testing.T) {
 	}
 	finishedJob.OwnerReferences = []metav1.OwnerReference{
 		{
-			APIVersion: "redroid.io/v1alpha1",
+			APIVersion: "redroid.isning.moe/v1alpha1",
 			Kind:       "RedroidTask",
 			Name:       task.Name,
 			Controller: &trueVal,

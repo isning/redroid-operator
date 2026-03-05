@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	taskFinalizer = "redroid.io/task-finalizer"
+	taskFinalizer = "redroid.isning.moe/task-finalizer"
 
 	// adbReadyScript is injected as the entrypoint for integration containers.
 	// It waits for the redroid ADB port to accept connections before running the real command.
@@ -51,11 +51,11 @@ sleep 30
 // For scheduled tasks (spec.schedule != ""), it creates one CronJob per InstanceRef.
 // All child resources are owned by the task and garbage-collected on deletion.
 //
-// +kubebuilder:rbac:groups=redroid.io,resources=redroidtasks,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=redroid.io,resources=redroidtasks/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=redroid.io,resources=redroidtasks/finalizers,verbs=update
-// +kubebuilder:rbac:groups=redroid.io,resources=redroidinstances,verbs=get;list;watch
-// +kubebuilder:rbac:groups=redroid.io,resources=redroidinstances/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=redroid.isning.moe,resources=redroidtasks,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=redroid.isning.moe,resources=redroidtasks/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=redroid.isning.moe,resources=redroidtasks/finalizers,verbs=update
+// +kubebuilder:rbac:groups=redroid.isning.moe,resources=redroidinstances,verbs=get;list;watch
+// +kubebuilder:rbac:groups=redroid.isning.moe,resources=redroidinstances/status,verbs=get;update;patch
 // +kubebuilder:rbac:groups=batch,resources=jobs;cronjobs,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 type RedroidTaskReconciler struct {
@@ -749,8 +749,8 @@ func shellJoin(command, args []string) string {
 func taskLabels(task *redroidv1alpha1.RedroidTask, inst *redroidv1alpha1.RedroidInstance) map[string]string {
 	return map[string]string{
 		"app.kubernetes.io/managed-by": "redroid-operator",
-		"redroid.io/task":              task.Name,
-		"redroid.io/instance":          inst.Name,
+		"redroid.isning.moe/task":      task.Name,
+		"redroid.isning.moe/instance":  inst.Name,
 	}
 }
 

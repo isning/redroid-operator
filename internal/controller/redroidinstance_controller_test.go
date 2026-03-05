@@ -60,7 +60,7 @@ func TestRedroidInstance_AddsFinalizer(t *testing.T) {
 	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "test-0", Namespace: "default"}, updated); err != nil {
 		t.Fatalf("get instance: %v", err)
 	}
-	if !controllerutil.ContainsFinalizer(updated, "redroid.io/instance-finalizer") {
+	if !controllerutil.ContainsFinalizer(updated, "redroid.isning.moe/instance-finalizer") {
 		t.Error("expected finalizer to be set after first reconcile")
 	}
 }
@@ -372,7 +372,7 @@ func TestRedroidInstance_DeletionCleansPod(t *testing.T) {
 	}
 
 	// Delete the instance. Fake client sets DeletionTimestamp because the
-	// controller finalizer "redroid.io/instance-finalizer" is present.
+	// controller finalizer "redroid.isning.moe/instance-finalizer" is present.
 	current := &redroidv1alpha1.RedroidInstance{}
 	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "del-0", Namespace: "default"}, current); err != nil {
 		t.Fatalf("get instance: %v", err)
@@ -388,8 +388,8 @@ func TestRedroidInstance_DeletionCleansPod(t *testing.T) {
 	// Either the object is gone (NotFound) or exists with the finalizer stripped.
 	final := &redroidv1alpha1.RedroidInstance{}
 	err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "del-0", Namespace: "default"}, final)
-	if err == nil && controllerutil.ContainsFinalizer(final, "redroid.io/instance-finalizer") {
-		t.Error("expected 'redroid.io/instance-finalizer' to be removed after deletion reconcile")
+	if err == nil && controllerutil.ContainsFinalizer(final, "redroid.isning.moe/instance-finalizer") {
+		t.Error("expected 'redroid.isning.moe/instance-finalizer' to be removed after deletion reconcile")
 	}
 }
 
@@ -444,9 +444,9 @@ func TestRedroidInstance_CreatesService(t *testing.T) {
 	}
 
 	// Selector must point at the instance label so traffic reaches the Pod.
-	if svc.Spec.Selector["redroid.io/instance"] != "svc-test" {
-		t.Errorf("Service selector redroid.io/instance = %q, want %q",
-			svc.Spec.Selector["redroid.io/instance"], "svc-test")
+	if svc.Spec.Selector["redroid.isning.moe/instance"] != "svc-test" {
+		t.Errorf("Service selector redroid.isning.moe/instance = %q, want %q",
+			svc.Spec.Selector["redroid.isning.moe/instance"], "svc-test")
 	}
 	if len(svc.Spec.Ports) != 1 || svc.Spec.Ports[0].Port != 5555 {
 		t.Errorf("expected 1 port 5555, got %v", svc.Spec.Ports)

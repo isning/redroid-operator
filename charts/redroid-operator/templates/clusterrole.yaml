@@ -7,17 +7,17 @@ metadata:
     {{- include "redroid-operator.labels" . | nindent 4 }}
 rules:
   # RedroidInstance CRD
-  - apiGroups: [redroid.io]
+  - apiGroups: [redroid.isning.moe]
     resources: [redroidinstances]
     verbs: [get, list, watch, create, update, patch, delete]
-  - apiGroups: [redroid.io]
+  - apiGroups: [redroid.isning.moe]
     resources: [redroidinstances/status, redroidinstances/finalizers]
     verbs: [get, update, patch]
   # RedroidTask CRD
-  - apiGroups: [redroid.io]
+  - apiGroups: [redroid.isning.moe]
     resources: [redroidtasks]
     verbs: [get, list, watch, create, update, patch, delete]
-  - apiGroups: [redroid.io]
+  - apiGroups: [redroid.isning.moe]
     resources: [redroidtasks/status, redroidtasks/finalizers]
     verbs: [get, update, patch]
   # Core: Pods, Services and ConfigMaps

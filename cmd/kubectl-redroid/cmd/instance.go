@@ -363,7 +363,7 @@ func newInstanceLogsCmd() *cobra.Command {
 
 			// Find the pod via label selector so we don't depend on status.PodName.
 			podList, err := cl.kube.CoreV1().Pods(inst.Namespace).List(context.Background(),
-				metav1.ListOptions{LabelSelector: "redroid.io/instance=" + inst.Name})
+				metav1.ListOptions{LabelSelector: "redroid.isning.moe/instance=" + inst.Name})
 			if err != nil {
 				return fmt.Errorf("list pods for instance %q: %w", inst.Name, err)
 			}

@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.0
-  name: redroidtasks.redroid.io
+  name: redroidtasks.redroid.isning.moe
 spec:
-  group: redroid.io
+  group: redroid.isning.moe
   names:
     kind: RedroidTask
     listKind: RedroidTaskList

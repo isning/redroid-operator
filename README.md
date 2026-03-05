@@ -55,7 +55,7 @@ helm install redroid-operator redroid/redroid-operator \
 
 ```yaml
 # instance.yaml
-apiVersion: redroid.io/v1alpha1
+apiVersion: redroid.isning.moe/v1alpha1
 kind: RedroidInstance
 metadata:
   name: android-0

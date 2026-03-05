@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	instanceFinalizer = "redroid.io/instance-finalizer"
+	instanceFinalizer = "redroid.isning.moe/instance-finalizer"
 	defaultADBPort    = int32(5555)
 )
 
@@ -36,9 +36,9 @@ const (
 // Temporary overrides (status.suspended, status.woken) live in status so GitOps tools
 // like Flux do not reconcile them back, avoiding config drift.
 //
-// +kubebuilder:rbac:groups=redroid.io,resources=redroidinstances,verbs=get;list;watch;create;update;patch;delete
-// +kubebuilder:rbac:groups=redroid.io,resources=redroidinstances/status,verbs=get;update;patch
-// +kubebuilder:rbac:groups=redroid.io,resources=redroidinstances/finalizers,verbs=update
+// +kubebuilder:rbac:groups=redroid.isning.moe,resources=redroidinstances,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=redroid.isning.moe,resources=redroidinstances/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=redroid.isning.moe,resources=redroidinstances/finalizers,verbs=update
 // +kubebuilder:rbac:groups="",resources=pods,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups="",resources=pods/portforward,verbs=create
 // +kubebuilder:rbac:groups="",resources=pods/log,verbs=get
@@ -347,9 +347,9 @@ func (r *RedroidInstanceReconciler) buildInstancePod(instance *redroidv1alpha1.R
 			Name:      instancePodName(instance),
 			Namespace: instance.Namespace,
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "redroid-operator",
-				"redroid.io/instance":          instance.Name,
-				"redroid.io/instance-index":    indexStr,
+				"app.kubernetes.io/managed-by":      "redroid-operator",
+				"redroid.isning.moe/instance":       instance.Name,
+				"redroid.isning.moe/instance-index": indexStr,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -390,7 +390,7 @@ func instanceServiceName(instance *redroidv1alpha1.RedroidInstance) string {
 }
 
 // reconcileService ensures a stable Service exists for the instance.
-// The Service selector targets the Pod label redroid.io/instance=<name>, which
+// The Service selector targets the Pod label redroid.isning.moe/instance=<name>, which
 // means port-forward works via the Service rather than a specific Pod — the CLI
 // does not need to know or store the Pod name.
 func (r *RedroidInstanceReconciler) reconcileService(ctx context.Context, instance *redroidv1alpha1.RedroidInstance) error {
@@ -421,14 +421,14 @@ func (r *RedroidInstanceReconciler) reconcileService(ctx context.Context, instan
 			Namespace: instance.Namespace,
 			Labels: map[string]string{
 				"app.kubernetes.io/managed-by": "redroid-operator",
-				"redroid.io/instance":          instance.Name,
+				"redroid.isning.moe/instance":  instance.Name,
 			},
 			Annotations: extraAnnotations,
 		},
 		Spec: corev1.ServiceSpec{
 			Type: svcType,
 			Selector: map[string]string{
-				"redroid.io/instance": instance.Name,
+				"redroid.isning.moe/instance": instance.Name,
 			},
 			Ports: []corev1.ServicePort{svcPort},
 		},

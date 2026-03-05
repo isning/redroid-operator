@@ -115,8 +115,8 @@ undeploy: ## Remove the operator from the cluster.
 
 .PHONY: helm-crds
 helm-crds: manifests ## Sync generated CRDs into the Helm chart's crds/ directory.
-	cp config/crd/bases/redroid.io_redroidinstances.yaml $(CHART_DIR)/crds/
-	cp config/crd/bases/redroid.io_redroidtasks.yaml     $(CHART_DIR)/crds/
+	cp config/crd/bases/redroid.isning.moe_redroidinstances.yaml $(CHART_DIR)/crds/
+	cp config/crd/bases/redroid.isning.moe_redroidtasks.yaml     $(CHART_DIR)/crds/
 
 .PHONY: helm-lint
 helm-lint: helm-crds ## Lint the Helm chart.

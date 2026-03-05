@@ -90,7 +90,7 @@ func TestRedroidTask_AddsFinalizer(t *testing.T) {
 	if err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "task-fin", Namespace: "default"}, updated); err != nil {
 		t.Fatalf("get task: %v", err)
 	}
-	if !controllerutil.ContainsFinalizer(updated, "redroid.io/task-finalizer") {
+	if !controllerutil.ContainsFinalizer(updated, "redroid.isning.moe/task-finalizer") {
 		t.Error("expected task finalizer to be set")
 	}
 }
@@ -519,7 +519,7 @@ func TestRedroidTask_ConcurrencyPolicyForbid(t *testing.T) {
 }
 
 // TestRedroidTask_DeletionRemovesFinalizer verifies that deleting a task strips the
-// controller finalizer "redroid.io/task-finalizer" so the object can be garbage collected.
+// controller finalizer "redroid.isning.moe/task-finalizer" so the object can be garbage collected.
 func TestRedroidTask_DeletionRemovesFinalizer(t *testing.T) {
 	scheme := newTestScheme(t)
 	inst := makeRunningInstance("maa-0", 0, "10.0.0.1:5555")
@@ -530,7 +530,7 @@ func TestRedroidTask_DeletionRemovesFinalizer(t *testing.T) {
 		WithObjects(inst, task).Build()
 
 	r := &controller.RedroidTaskReconciler{Client: fakeClient, Scheme: scheme}
-	// Reconcile once: controller adds "redroid.io/task-finalizer" then creates Job.
+	// Reconcile once: controller adds "redroid.isning.moe/task-finalizer" then creates Job.
 	reconcileTask(t, r, "task-del")
 	reconcileTask(t, r, "task-del")
 
@@ -548,8 +548,8 @@ func TestRedroidTask_DeletionRemovesFinalizer(t *testing.T) {
 	// After finalizer removal the fake client deletes the object, or it exists with no finalizer.
 	final := &redroidv1alpha1.RedroidTask{}
 	err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "task-del", Namespace: "default"}, final)
-	if err == nil && controllerutil.ContainsFinalizer(final, "redroid.io/task-finalizer") {
-		t.Error("expected 'redroid.io/task-finalizer' to be removed after deletion reconcile")
+	if err == nil && controllerutil.ContainsFinalizer(final, "redroid.isning.moe/task-finalizer") {
+		t.Error("expected 'redroid.isning.moe/task-finalizer' to be removed after deletion reconcile")
 	}
 }
 

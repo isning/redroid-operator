@@ -13,10 +13,10 @@ import (
 )
 
 // instancesGVR is the GVR for RedroidInstance.
-var instancesGVR = schema.GroupVersionResource{Group: "redroid.io", Version: "v1alpha1", Resource: "redroidinstances"}
+var instancesGVR = schema.GroupVersionResource{Group: "redroid.isning.moe", Version: "v1alpha1", Resource: "redroidinstances"}
 
 // tasksGVR is the GVR for RedroidTask.
-var tasksGVR = schema.GroupVersionResource{Group: "redroid.io", Version: "v1alpha1", Resource: "redroidtasks"}
+var tasksGVR = schema.GroupVersionResource{Group: "redroid.isning.moe", Version: "v1alpha1", Resource: "redroidtasks"}
 
 // clients bundles the various k8s clients needed by the plugin.
 type clients struct {

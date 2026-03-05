@@ -4,9 +4,9 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     controller-gen.kubebuilder.io/version: v0.17.0
-  name: redroidinstances.redroid.io
+  name: redroidinstances.redroid.isning.moe
 spec:
-  group: redroid.io
+  group: redroid.isning.moe
   names:
     kind: RedroidInstance
     listKind: RedroidInstanceList
