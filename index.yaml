@@ -65,10 +65,10 @@ entries:
     - https://github.com/isning/redroid-operator/releases/download/v0.1.0/redroid-operator-0.1.0.tgz
     version: 0.1.0
   - apiVersion: v2
-    appVersion: sha-37de685
-    created: "2026-03-05T13:07:39.109810847Z"
+    appVersion: sha-dd8e0a8
+    created: "2026-03-05T15:40:06.136107247Z"
     description: Kubernetes operator for managing Redroid Android container instances
-    digest: 973208d2b4c12b9b350748e8b8a6c4d0ca9009fa3cf13a68e64009afd8263a4e
+    digest: 41f612066ae5135f4f8b56da3baf69c7047cac5b1fbc9d6afa47fa7c857acc70
     home: https://github.com/isning/redroid-operator
     keywords:
     - android
@@ -85,4 +85,4 @@ entries:
     urls:
     - https://github.com/isning/redroid-operator/releases/download/snapshot/redroid-operator-0.0.0-snapshot.tgz
     version: 0.0.0-snapshot
-generated: "2026-03-05T13:12:30.826563821Z"
+generated: "2026-03-05T15:40:06.133409933Z"
