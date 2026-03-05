@@ -111,8 +111,7 @@
             # Kubernetes helpers
             kubectl
             kustomize
-            helm
-            helm-docs
+            kubernetes-helm
 
             # Docs tooling
             crane
