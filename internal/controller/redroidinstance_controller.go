@@ -505,10 +505,25 @@ const kmsgSyncMount = "/kmsg-tools"
 // This ensures Android kernel logs are accessible via `kubectl logs <pod>`
 // and prevents host dmesg pollution, all without requiring a sidecar.
 const kmsgMainWrapper = `
-/kmsg-tools/socat PTY,link=/tmp/kmsg-pty,mode=0622,rawer - &
+/kmsg-tools/socat PTY,link=/kmsg-tools/kmsg-pty,mode=0622,rawer - &
 SOCAT_PID=$!
-/kmsg-tools/busybox sleep 0.3
-/kmsg-tools/busybox mount --bind /tmp/kmsg-pty /dev/kmsg
+
+# Wait for the PTY to be created (max 5 seconds)
+RETRIES=50
+while [ ! -e /kmsg-tools/kmsg-pty ]; do
+  if ! /kmsg-tools/busybox kill -0 $SOCAT_PID 2>/dev/null; then
+    echo "Error: socat (PID $SOCAT_PID) terminated unexpectedly" >&2
+    exit 1
+  fi
+  if [ $RETRIES -le 0 ]; then
+    echo "Error: timeout waiting for /kmsg-tools/kmsg-pty" >&2
+    exit 1
+  fi
+  /kmsg-tools/busybox sleep 0.1
+  RETRIES=$((RETRIES - 1))
+done
+
+/kmsg-tools/busybox mount --bind /kmsg-tools/kmsg-pty /dev/kmsg || { echo "Error: failed to bind mount /dev/kmsg"; exit 1; }
 exec /init "$@"
 `
 

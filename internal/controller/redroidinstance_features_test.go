@@ -298,9 +298,10 @@ var _ = Describe("RedroidInstance Features", func() {
 		Expect(main.Name).To(Equal("redroid"))
 		Expect(main.Command).To(Equal([]string{"/kmsg-tools/busybox", "sh"}), "main container must use /kmsg-tools/busybox sh wrapper")
 		Expect(main.Args[0]).To(Equal("-c"))
-		Expect(main.Args[1]).To(ContainSubstring("/kmsg-tools/socat PTY"), "wrapper must use injected socat")
-		Expect(main.Args[1]).To(ContainSubstring("/kmsg-tools/busybox sleep"), "wrapper must use injected busybox for sleep")
-		Expect(main.Args[1]).To(ContainSubstring("/kmsg-tools/busybox mount"), "wrapper must use injected busybox for mount")
+		Expect(main.Args[1]).To(ContainSubstring("SOCAT_PID=$!"), "wrapper must capture socat PID")
+		Expect(main.Args[1]).To(ContainSubstring("while [ ! -e /kmsg-tools/kmsg-pty ]; do"), "wrapper must poll for PTY existence")
+		Expect(main.Args[1]).To(ContainSubstring("/kmsg-tools/busybox kill -0 $SOCAT_PID"), "wrapper must check if socat is alive")
+		Expect(main.Args[1]).To(ContainSubstring("/kmsg-tools/busybox mount --bind /kmsg-tools/kmsg-pty /dev/kmsg"), "wrapper must mount /dev/kmsg")
 		Expect(main.Args[1]).To(ContainSubstring("exec /init"), "wrapper must exec /init with original args")
 		Expect(main.Args[2]).To(Equal("--"))
 		// Original androidboot args appear after --.
