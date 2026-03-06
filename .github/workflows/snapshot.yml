@@ -210,6 +210,12 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Upload chart to rolling snapshot pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: snapshot
+          files: dist/redroid-operator-0.0.0-snapshot.tgz
+
       - name: Update gh-pages index.yaml
         run: |
           RELEASE_BASE="https://github.com/${{ github.repository }}/releases/download/snapshot"
