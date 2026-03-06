@@ -6,7 +6,7 @@ name: Publish Snapshot CLI
 
 on:
   workflow_run:
-    workflows: [CI, Snapshot]
+    workflows: [CI]
     types: [completed]
     branches: [main, master]
 
@@ -29,10 +29,15 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Wait for snapshot release clean workflow
+        uses: lewagon/wait-on-check-action@v1
+        with:
+          ref: ${{ github.ref }}
+          running-workflow-name: "Snapshot release clean"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Attach to rolling snapshot pre-release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: snapshot
-          name: Snapshot (latest main)
-          prerelease: true
           files: artifacts/*
