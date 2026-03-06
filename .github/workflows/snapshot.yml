@@ -22,6 +22,35 @@ env:
   CHART_REPO: ghcr.io/isning/charts
 
 jobs:
+  snapshot-release:
+    name: Snapshot release clean
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete old snapshot release and tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete snapshot -y || true
+          git push --delete origin snapshot || true
+
+      - name: Upload chart to rolling snapshot pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: snapshot
+          name: Snapshot
+          prerelease: true
+          body: |
+            Rolling snapshot built from `main` — automatically overwritten on every push.
+
+            **Commit SHA1:** ${{ github.sha }}
+
+            Install via Helm repo:
+                helm repo add redroid https://isning.github.io/redroid-operator
+                helm install redroid-operator redroid/redroid-operator --version 0.0.0-snapshot
+
+            Install via OCI (tracks latest main):
+                helm install redroid-operator oci://ghcr.io/isning/charts/redroid-operator --version main
+
   # ── container image (parallel per-platform build + manifest merge) ───────────
   image-build:
     name: Snapshot image (${{ matrix.platform }})
@@ -130,6 +159,7 @@ jobs:
   helm-chart:
     name: Snapshot Helm chart
     runs-on: ubuntu-latest
+    needs: snapshot-release
     concurrency:
       group: gh-pages
       cancel-in-progress: false
@@ -172,34 +202,6 @@ jobs:
         run: |
           helm push dist/redroid-operator-0.0.0-snapshot.tgz oci://${{ env.CHART_REPO }}
           crane tag "${{ env.CHART_REPO }}/redroid-operator:0.0.0-snapshot" main
-
-      - name: Delete old snapshot release and tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release delete snapshot -y || true
-          git push --delete origin snapshot || true
-
-      - name: Upload chart to rolling snapshot pre-release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: snapshot
-          name: Snapshot (latest main)
-          prerelease: true
-          body: |
-            Rolling snapshot built from `main` — automatically overwritten on every push.
-
-            **Commit SHA1:** ${{ github.sha }}
-
-            Install via Helm repo:
-                helm repo add redroid https://isning.github.io/redroid-operator
-                helm install redroid-operator redroid/redroid-operator --version 0.0.0-snapshot
-
-            Install via OCI (tracks latest main):
-                helm install redroid-operator oci://ghcr.io/isning/charts/redroid-operator --version main
-
-            For the `kubectl-redroid` CLI, build from source or use a [versioned release](https://github.com/${{ github.repository }}/releases).
-          files: dist/redroid-operator-0.0.0-snapshot.tgz
 
       - name: Configure git
         run: |
