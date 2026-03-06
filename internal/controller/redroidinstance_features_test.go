@@ -299,8 +299,9 @@ var _ = Describe("RedroidInstance Features", func() {
 		Expect(main.Command).To(Equal([]string{"/kmsg-tools/busybox", "sh"}), "main container must use /kmsg-tools/busybox sh wrapper")
 		Expect(main.Args[0]).To(Equal("-c"))
 		Expect(main.Args[1]).To(ContainSubstring("/kmsg-tools/socat PTY"), "wrapper must use injected socat")
-		Expect(main.Args[1]).To(ContainSubstring("mount --bind /tmp/kmsg-pty /dev/kmsg"), "wrapper must bind-mount PTY over /dev/kmsg")
-		Expect(main.Args[1]).To(ContainSubstring(`exec /init "$@"`), "wrapper must exec /init with original args")
+		Expect(main.Args[1]).To(ContainSubstring("/kmsg-tools/busybox sleep"), "wrapper must use injected busybox for sleep")
+		Expect(main.Args[1]).To(ContainSubstring("/kmsg-tools/busybox mount"), "wrapper must use injected busybox for mount")
+		Expect(main.Args[1]).To(ContainSubstring("exec /init"), "wrapper must exec /init with original args")
 		Expect(main.Args[2]).To(Equal("--"))
 		// Original androidboot args appear after --.
 		Expect(main.Args[3:]).To(ContainElement("androidboot.redroid_gpu_mode=host"))

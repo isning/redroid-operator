@@ -507,8 +507,8 @@ const kmsgSyncMount = "/kmsg-tools"
 const kmsgMainWrapper = `
 /kmsg-tools/socat PTY,link=/tmp/kmsg-pty,mode=0622,rawer - &
 SOCAT_PID=$!
-sleep 0.3
-mount --bind /tmp/kmsg-pty /dev/kmsg
+/kmsg-tools/busybox sleep 0.3
+/kmsg-tools/busybox mount --bind /tmp/kmsg-pty /dev/kmsg
 exec /init "$@"
 `
 
