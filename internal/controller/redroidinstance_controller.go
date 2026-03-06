@@ -526,11 +526,11 @@ func buildInitAndMainContainers(
 ) (initContainers []corev1.Container, containers []corev1.Container) {
 	// Main container command/args:
 	//   - disabled: use image ENTRYPOINT (/init) with bare androidboot args
-	//   - enabled:  /bin/sh wrapper sets up socat, then exec /init "$@"
+	//   - enabled:  /kmsg-tools/busybox sh wrapper sets up socat, then exec /init "$@"
 	mainCmd := []string(nil)
 	mainArgs := args
 	if !instance.Spec.DisableKmsgRedirect {
-		mainCmd = []string{"/bin/sh"}
+		mainCmd = []string{"/kmsg-tools/busybox", "sh"}
 		mainArgs = append([]string{"-c", kmsgMainWrapper, "--"}, args...)
 	}
 
@@ -565,7 +565,7 @@ func buildInitAndMainContainers(
 		Name:            "kmsg-tools",
 		Image:           toolsImg,
 		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/sh", "-c", "cp /bin/socat /kmsg-tools/ || exit 1; chmod +x /kmsg-tools/socat"},
+		Command:         []string{"/bin/sh", "-c", "cp /bin/socat /bin/busybox /kmsg-tools/ || exit 1; chmod +x /kmsg-tools/socat /kmsg-tools/busybox"},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: kmsgSyncVolume, MountPath: kmsgSyncMount},
 		},

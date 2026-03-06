@@ -291,12 +291,12 @@ var _ = Describe("RedroidInstance Features", func() {
 		Expect(ic.Name).To(Equal("kmsg-tools"))
 		Expect(ic.Image).To(Equal("ghcr.io/isning/redroid-operator/kmsg-tools:latest"))
 		Expect(ic.Command).To(HaveLen(3))
-		Expect(ic.Command[2]).To(ContainSubstring("cp /bin/socat /kmsg-tools/"))
+		Expect(ic.Command[2]).To(ContainSubstring("cp /bin/socat /bin/busybox /kmsg-tools/"))
 
-		// Main container: /bin/sh wrapper using injected socat.
+		// Main container: /kmsg-tools/busybox sh wrapper using injected socat.
 		main := pod.Spec.Containers[0]
 		Expect(main.Name).To(Equal("redroid"))
-		Expect(main.Command).To(Equal([]string{"/bin/sh"}), "main container must use /bin/sh wrapper")
+		Expect(main.Command).To(Equal([]string{"/kmsg-tools/busybox", "sh"}), "main container must use /kmsg-tools/busybox sh wrapper")
 		Expect(main.Args[0]).To(Equal("-c"))
 		Expect(main.Args[1]).To(ContainSubstring("/kmsg-tools/socat PTY"), "wrapper must use injected socat")
 		Expect(main.Args[1]).To(ContainSubstring("mount --bind /tmp/kmsg-pty /dev/kmsg"), "wrapper must bind-mount PTY over /dev/kmsg")
