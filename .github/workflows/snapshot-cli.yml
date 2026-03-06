@@ -30,7 +30,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Wait for snapshot release clean workflow
-        uses: lewagon/wait-on-check-action@v1
+        uses: lewagon/wait-on-check-action@v1.5.0
         with:
           ref: ${{ github.ref }}
           running-workflow-name: "Snapshot release clean"
