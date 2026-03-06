@@ -35,6 +35,9 @@ helm install redroid-operator \
 | image.tag | string | `""` | Image tag. Defaults to the chart appVersion. |
 | imagePullSecrets | list | `[]` | Image pull secrets (list of {name: ...}). |
 | installCRDs | bool | `true` | Whether to install CRDs as part of this chart. Set to false if you manage CRDs separately. |
+| kmsgToolsImage.pullPolicy | string | `"IfNotPresent"` | Image pull policy. |
+| kmsgToolsImage.repository | string | `"ghcr.io/isning/redroid-operator/kmsg-tools"` | Image repository. |
+| kmsgToolsImage.tag | string | `""` | Overrides the kmsg-tools image tag (defaults to the operator's image tag or chart appVersion) |
 | leaderElection | bool | `true` | Enable leader election (recommended when replicaCount > 1). |
 | metricsPort | int | `8080` | Metrics port exposed by the manager. |
 | nameOverride | string | `""` | Override the deployed resource names. |
