@@ -26,7 +26,7 @@ permissions:
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ghcr.io/isning/redroid-operator
-  SIDECAR_IMAGE_NAME: ghcr.io/isning/redroid-operator/kmsg
+  TOOLS_IMAGE_NAME: ghcr.io/isning/redroid-operator/kmsg-tools
   CHART_REPO: ghcr.io/isning/charts
 
 jobs:
