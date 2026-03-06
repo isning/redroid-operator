@@ -27,13 +27,13 @@ jobs:
           cache: true
 
       - name: Build operator
-        run: go build -mod=vendor -o bin/manager ./cmd/
+        run: make build
 
       - name: Build kubectl-redroid plugin
-        run: go build -mod=vendor -o bin/kubectl-redroid ./cmd/kubectl-redroid/
+        run: make build-plugin
 
       - name: Run tests
-        run: go test -mod=vendor ./... -count=1 -race
+        run: make test
 
   # ── lint ─────────────────────────────────────────────────────────────────────
   lint:
@@ -76,7 +76,7 @@ jobs:
         run: make manifests helm-crds
 
       - name: Lint Helm chart
-        run: helm lint charts/redroid-operator
+        run: make helm-lint
 
   # ── helm-test ────────────────────────────────────────────────────────────────
   helm-test:
@@ -97,4 +97,4 @@ jobs:
         run: helm plugin install https://github.com/helm-unittest/helm-unittest
 
       - name: Run Helm chart unit tests
-        run: helm unittest charts/redroid-operator
+        run: make helm-test

@@ -262,4 +262,187 @@ var _ = Describe("RedroidInstance Features", func() {
 		Expect(mounts["/data-base"]).To(BeTrue(), "expected /data-base mount in normal mode")
 		Expect(mounts["/data-diff/0"]).To(BeTrue(), "expected /data-diff/0 mount in normal mode")
 	})
+
+	It("Adds kmsg-tools init container and wraps main command (default enabled)", func() {
+		inst := makeInstance("inst-kmsg", 0, false)
+		// DisableKmsgRedirect is false by default
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
+			WithObjects(inst).Build()
+
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
+		reconcileInstance(r, "inst-kmsg")
+		reconcileInstance(r, "inst-kmsg")
+
+		pod := &corev1.Pod{}
+		err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "redroid-instance-inst-kmsg", Namespace: "default"}, pod)
+		Expect(err).NotTo(HaveOccurred(), "get pod")
+
+		// Pod must have 1 init container (kmsg-tools) and 1 main container (redroid).
+		Expect(pod.Spec.InitContainers).To(HaveLen(1), "expected kmsg-tools init container")
+		Expect(pod.Spec.Containers).To(HaveLen(1), "expected only the main redroid container")
+
+		// shareProcessNamespace must be nil (no longer needed).
+		Expect(pod.Spec.ShareProcessNamespace).To(BeNil())
+
+		// Init container: copies socat to emptyDir.
+		ic := pod.Spec.InitContainers[0]
+		Expect(ic.Name).To(Equal("kmsg-tools"))
+		Expect(ic.Image).To(Equal("ghcr.io/isning/redroid-operator/kmsg-tools:latest"))
+		Expect(ic.Command).To(HaveLen(3))
+		Expect(ic.Command[2]).To(ContainSubstring("cp /bin/socat /kmsg-tools/"))
+
+		// Main container: /bin/sh wrapper using injected socat.
+		main := pod.Spec.Containers[0]
+		Expect(main.Name).To(Equal("redroid"))
+		Expect(main.Command).To(Equal([]string{"/bin/sh"}), "main container must use /bin/sh wrapper")
+		Expect(main.Args[0]).To(Equal("-c"))
+		Expect(main.Args[1]).To(ContainSubstring("/kmsg-tools/socat PTY"), "wrapper must use injected socat")
+		Expect(main.Args[1]).To(ContainSubstring("mount --bind /tmp/kmsg-pty /dev/kmsg"), "wrapper must bind-mount PTY over /dev/kmsg")
+		Expect(main.Args[1]).To(ContainSubstring(`exec /init "$@"`), "wrapper must exec /init with original args")
+		Expect(main.Args[2]).To(Equal("--"))
+		// Original androidboot args appear after --.
+		Expect(main.Args[3:]).To(ContainElement("androidboot.redroid_gpu_mode=host"))
+
+		// kmsg-tools emptyDir must be mounted in both containers.
+		var foundInitMount, foundMainMount bool
+		for _, vm := range ic.VolumeMounts {
+			if vm.Name == "kmsg-tools" && vm.MountPath == "/kmsg-tools" {
+				foundInitMount = true
+			}
+		}
+		for _, vm := range main.VolumeMounts {
+			if vm.Name == "kmsg-tools" && vm.MountPath == "/kmsg-tools" {
+				foundMainMount = true
+			}
+		}
+		Expect(foundInitMount).To(BeTrue(), "init container must mount kmsg-tools shared volume")
+		Expect(foundMainMount).To(BeTrue(), "main container must mount kmsg-tools shared volume")
+
+		// kmsg-tools volume must be declared in the Pod as emptyDir.
+		var foundToolsVolume bool
+		for _, v := range pod.Spec.Volumes {
+			if v.Name == "kmsg-tools" && v.EmptyDir != nil {
+				foundToolsVolume = true
+			}
+		}
+		Expect(foundToolsVolume).To(BeTrue(), "pod must have kmsg-tools emptyDir volume")
+	})
+
+	It("Disables kmsg inject when DisableKmsgRedirect is true", func() {
+		inst := makeInstance("inst-no-kmsg", 0, false)
+		inst.Spec.DisableKmsgRedirect = true
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
+			WithObjects(inst).Build()
+
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
+		reconcileInstance(r, "inst-no-kmsg")
+		reconcileInstance(r, "inst-no-kmsg")
+
+		pod := &corev1.Pod{}
+		err := fakeClient.Get(context.Background(), types.NamespacedName{Name: "redroid-instance-inst-no-kmsg", Namespace: "default"}, pod)
+		Expect(err).NotTo(HaveOccurred(), "get pod")
+
+		// Must have exactly one container (redroid) and zero init containers.
+		Expect(pod.Spec.InitContainers).To(BeEmpty(), "DisableKmsgRedirect=true must suppress the init container")
+		Expect(pod.Spec.Containers).To(HaveLen(1))
+
+		// Main container must use the image's default ENTRYPOINT (no wrapper).
+		c := pod.Spec.Containers[0]
+		Expect(c.Command).To(BeNil(), "command must be nil when DisableKmsgRedirect=true")
+		Expect(c.Args).NotTo(ContainElement("-c"), "args must not contain -c shell flag")
+
+		// No kmsg-tools volume.
+		for _, v := range pod.Spec.Volumes {
+			Expect(v.Name).NotTo(Equal("kmsg-tools"), "kmsg-tools volume must not exist when redirect is disabled")
+		}
+	})
+
+	It("Uses custom init container image from spec.kmsgToolsImage", func() {
+		inst := makeInstance("inst-custom-tools", 0, false)
+		inst.Spec.KmsgToolsImage = "my-registry/kmsg-tools:v1.2.3"
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
+			WithObjects(inst).Build()
+
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
+		reconcileInstance(r, "inst-custom-tools")
+		reconcileInstance(r, "inst-custom-tools")
+
+		pod := &corev1.Pod{}
+		Expect(fakeClient.Get(context.Background(),
+			types.NamespacedName{Name: "redroid-instance-inst-custom-tools", Namespace: "default"}, pod)).
+			To(Succeed())
+
+		ic := pod.Spec.InitContainers[0]
+		Expect(ic.Name).To(Equal("kmsg-tools"))
+		Expect(ic.Image).To(Equal("my-registry/kmsg-tools:v1.2.3"), "custom tools image must be used")
+	})
+
+	It("Forwards ExtraArgs through the main container wrapper", func() {
+		inst := makeInstance("inst-extra-args", 0, false)
+		inst.Spec.ExtraArgs = []string{
+			"androidboot.redroid_width=1080",
+			"androidboot.redroid_height=1920",
+		}
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
+			WithObjects(inst).Build()
+
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
+		reconcileInstance(r, "inst-extra-args")
+		reconcileInstance(r, "inst-extra-args")
+
+		pod := &corev1.Pod{}
+		Expect(fakeClient.Get(context.Background(),
+			types.NamespacedName{Name: "redroid-instance-inst-extra-args", Namespace: "default"}, pod)).
+			To(Succeed())
+
+		mainArgs := pod.Spec.Containers[0].Args
+		// Args after "--": the full androidboot arg list forwarded to /init via $@
+		Expect(mainArgs[2]).To(Equal("--"))
+		Expect(mainArgs[3:]).To(ContainElement("androidboot.redroid_width=1080"))
+		Expect(mainArgs[3:]).To(ContainElement("androidboot.redroid_height=1920"))
+	})
+
+	It("Adds kmsg-tools emptyDir in BaseMode as well", func() {
+		inst := makeInstance("inst-base-kmsg", 0, false)
+		inst.Spec.BaseMode = true
+
+		fakeClient := fake.NewClientBuilder().WithScheme(scheme).
+			WithStatusSubresource(&redroidv1alpha1.RedroidInstance{}).
+			WithObjects(inst).Build()
+
+		r := &controller.RedroidInstanceReconciler{Client: fakeClient, Scheme: scheme, Recorder: record.NewFakeRecorder(100)}
+		reconcileInstance(r, "inst-base-kmsg")
+		reconcileInstance(r, "inst-base-kmsg")
+
+		pod := &corev1.Pod{}
+		Expect(fakeClient.Get(context.Background(),
+			types.NamespacedName{Name: "redroid-instance-inst-base-kmsg", Namespace: "default"}, pod)).
+			To(Succeed())
+
+		// EmptyDir volume must exist in BaseMode too.
+		var found bool
+		for _, v := range pod.Spec.Volumes {
+			if v.Name == "kmsg-tools" && v.EmptyDir != nil {
+				found = true
+			}
+		}
+		Expect(found).To(BeTrue(), "kmsg-tools emptyDir must also be added in BaseMode")
+
+		// Main container must still carry the sync VolumeMount.
+		var foundMount bool
+		for _, vm := range pod.Spec.Containers[0].VolumeMounts {
+			if vm.Name == "kmsg-tools" {
+				foundMount = true
+			}
+		}
+		Expect(foundMount).To(BeTrue(), "main container must mount kmsg-tools in BaseMode")
+	})
 })

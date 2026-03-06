@@ -90,7 +90,8 @@ var _ = Describe("RedroidInstance Controller", func() {
 			err := fakeClient.Get(context.Background(), types.NamespacedName{Name: podName, Namespace: "default"}, pod)
 			Expect(err).NotTo(HaveOccurred(), "expected Pod to exist")
 			Expect(pod.Spec.RestartPolicy).To(Equal(corev1.RestartPolicyNever))
-			Expect(pod.Spec.Containers).To(HaveLen(1))
+			Expect(pod.Spec.InitContainers).To(HaveLen(1)) // kmsg-tools (default-on)
+			Expect(pod.Spec.Containers).To(HaveLen(1))     // redroid
 
 			c := pod.Spec.Containers[0]
 			Expect(c.Name).To(Equal("redroid"))

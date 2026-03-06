@@ -450,6 +450,22 @@ func (r *RedroidInstanceReconciler) buildInstancePod(instance *redroidv1alpha1.R
 		}
 	}
 
+	// When kmsg redirect is enabled, add a shared emptyDir for PID/ready handshake.
+	if !instance.Spec.DisableKmsgRedirect {
+		volumeMounts = append(volumeMounts, corev1.VolumeMount{
+			Name:      kmsgSyncVolume,
+			MountPath: kmsgSyncMount,
+		})
+		volumes = append(volumes, corev1.Volume{
+			Name: kmsgSyncVolume,
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
+			},
+		})
+	}
+
+	initContainers, containers := buildInitAndMainContainers(instance, args, pullPolicy, port, indexStr, privileged, volumeMounts)
+
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      instancePodName(instance),
@@ -466,27 +482,96 @@ func (r *RedroidInstanceReconciler) buildInstancePod(instance *redroidv1alpha1.R
 			Tolerations:      instance.Spec.Tolerations,
 			Affinity:         instance.Spec.Affinity,
 			ImagePullSecrets: instance.Spec.ImagePullSecrets,
-			Containers: []corev1.Container{
-				{
-					Name:            "redroid",
-					Image:           instance.Spec.Image,
-					ImagePullPolicy: pullPolicy,
-					Args:            args,
-					Resources:       instance.Spec.Resources,
-					SecurityContext: &corev1.SecurityContext{Privileged: &privileged},
-					Ports: []corev1.ContainerPort{
-						{ContainerPort: port, Protocol: corev1.ProtocolTCP},
-					},
-					Env: append([]corev1.EnvVar{
-						{Name: "INSTANCE_INDEX", Value: indexStr},
-					}, instance.Spec.ExtraEnv...),
-					VolumeMounts: volumeMounts,
-				},
-			},
-			Volumes: volumes,
+			InitContainers:   initContainers,
+			Containers:       containers,
+			Volumes:          volumes,
 		},
 	}
 	return pod
+}
+
+// kmsgSyncVolume is the emptyDir volume name used to share the socat binary
+// between the init container and the main container.
+const kmsgSyncVolume = "kmsg-tools"
+
+// kmsgSyncMount is the path at which kmsgSyncVolume is mounted in both containers.
+const kmsgSyncMount = "/kmsg-tools"
+
+// kmsgMainWrapper is injected as the main container's shell command.
+// It uses the locally copied socat binary to create a PTY, bind-mounts its
+// slave end over /dev/kmsg, and forwards the PTY master output to stdout.
+// This ensures Android kernel logs are accessible via `kubectl logs <pod>`
+// and prevents host dmesg pollution, all without requiring a sidecar.
+const kmsgMainWrapper = `
+/kmsg-tools/socat PTY,link=/tmp/kmsg-pty,mode=0622,rawer - &
+SOCAT_PID=$!
+sleep 0.3
+mount --bind /tmp/kmsg-pty /dev/kmsg
+exec /init "$@"
+`
+
+// buildInitAndMainContainers constructs the container list for the Pod.
+// When kmsg redirect is enabled (the default) it returns two containers:
+//   - An init container that copies a musl-static socat binary into an emptyDir.
+//   - The main "redroid" container which runs a wrapper script that uses the
+//     injected socat to redirect /dev/kmsg before exec'ing /init.
+func buildInitAndMainContainers(
+	instance *redroidv1alpha1.RedroidInstance,
+	args []string,
+	pullPolicy corev1.PullPolicy,
+	port int32,
+	indexStr string,
+	privileged bool,
+	volumeMounts []corev1.VolumeMount,
+) (initContainers []corev1.Container, containers []corev1.Container) {
+	// Main container command/args:
+	//   - disabled: use image ENTRYPOINT (/init) with bare androidboot args
+	//   - enabled:  /bin/sh wrapper sets up socat, then exec /init "$@"
+	mainCmd := []string(nil)
+	mainArgs := args
+	if !instance.Spec.DisableKmsgRedirect {
+		mainCmd = []string{"/bin/sh"}
+		mainArgs = append([]string{"-c", kmsgMainWrapper, "--"}, args...)
+	}
+
+	main := corev1.Container{
+		Name:            "redroid",
+		Image:           instance.Spec.Image,
+		ImagePullPolicy: pullPolicy,
+		Command:         mainCmd,
+		Args:            mainArgs,
+		Resources:       instance.Spec.Resources,
+		SecurityContext: &corev1.SecurityContext{Privileged: &privileged},
+		Ports: []corev1.ContainerPort{
+			{ContainerPort: port, Protocol: corev1.ProtocolTCP},
+		},
+		Env: append([]corev1.EnvVar{
+			{Name: "INSTANCE_INDEX", Value: indexStr},
+		}, instance.Spec.ExtraEnv...),
+		VolumeMounts: volumeMounts,
+	}
+
+	if instance.Spec.DisableKmsgRedirect {
+		return nil, []corev1.Container{main}
+	}
+
+	// Init container copies socat to the shared emptyDir.
+	toolsImg := "ghcr.io/isning/redroid-operator/kmsg-tools:latest"
+	if instance.Spec.KmsgToolsImage != "" {
+		toolsImg = instance.Spec.KmsgToolsImage
+	}
+
+	initContainer := corev1.Container{
+		Name:            "kmsg-tools",
+		Image:           toolsImg,
+		ImagePullPolicy: corev1.PullIfNotPresent,
+		Command:         []string{"/bin/sh", "-c", "cp /bin/socat /kmsg-tools/ || exit 1; chmod +x /kmsg-tools/socat"},
+		VolumeMounts: []corev1.VolumeMount{
+			{Name: kmsgSyncVolume, MountPath: kmsgSyncMount},
+		},
+	}
+
+	return []corev1.Container{initContainer}, []corev1.Container{main}
 }
 
 func instancePodName(instance *redroidv1alpha1.RedroidInstance) string {

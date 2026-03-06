@@ -4,6 +4,8 @@
 #   go, docker (or podman), kubectl, controller-gen, kustomize
 
 IMG          ?= ghcr.io/isning/redroid-operator:latest
+TOOLS_IMG    ?= ghcr.io/isning/redroid-operator/kmsg-tools:latest
+GO_FLAGS     ?= -mod=vendor
 CONTROLLER_GEN ?= go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.17.0
 KUSTOMIZE    ?= kustomize
 HELM         ?= helm
@@ -41,11 +43,11 @@ vet: ## Run go vet.
 
 .PHONY: test
 test: ## Run unit tests (uses fake client — no cluster or envtest binary needed).
-	go test ./... -v -count=1
+	go test $(GO_FLAGS) ./... -v -count=1 -race
 
 .PHONY: test-short
 test-short: ## Run tests without verbose output.
-	go test ./...
+	go test $(GO_FLAGS) ./...
 
 .PHONY: lint
 lint: ## Run golangci-lint.
@@ -61,11 +63,11 @@ cover: ## Run tests with coverage and produce HTML report.
 
 .PHONY: build
 build: generate fmt vet ## Build the manager binary.
-	go build -o bin/manager ./cmd/
+	go build $(GO_FLAGS) -o bin/manager ./cmd/
 
 .PHONY: build-plugin
 build-plugin: ## Build the kubectl-redroid plugin binary.
-	go build -ldflags "-X github.com/isning/redroid-operator/cmd/kubectl-redroid/cmd.Version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)" \
+	go build $(GO_FLAGS) -ldflags "-X github.com/isning/redroid-operator/cmd/kubectl-redroid/cmd.Version=$(shell git describe --tags --always --dirty 2>/dev/null || echo dev)" \
 		-o bin/kubectl-redroid ./cmd/kubectl-redroid/
 
 .PHONY: install-plugin
@@ -91,6 +93,18 @@ docker-push: ## Push the Docker image.
 .PHONY: docker-buildx
 docker-buildx: ## Build and push a multi-arch image with buildx.
 	docker buildx build --platform linux/amd64,linux/arm64 -t ${IMG} --push .
+
+.PHONY: docker-build-tools
+docker-build-tools: ## Build the kmsg-tools Docker image (TOOLS_IMG=...).
+	docker build -t ${TOOLS_IMG} kmsg-tools/
+
+.PHONY: docker-push-tools
+docker-push-tools: ## Push the kmsg-tools Docker image.
+	docker push ${TOOLS_IMG}
+
+.PHONY: docker-buildx-tools
+docker-buildx-tools: ## Build and push a multi-arch kmsg-tools image with buildx.
+	docker buildx build --platform linux/amd64,linux/arm64 -t ${TOOLS_IMG} --push kmsg-tools/
 
 ##@ Deployment
 

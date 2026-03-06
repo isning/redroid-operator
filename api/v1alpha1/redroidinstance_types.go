@@ -173,6 +173,24 @@ type RedroidInstanceSpec struct {
 	// +optional
 	Network *NetworkSpec `json:"network,omitempty"`
 
+	// DisableKmsgRedirect disables the default /dev/kmsg redirect.
+	// By default (false) the operator injects an init container that copies a
+	// musl-statically-linked socat binary into the redroid container via an
+	// emptyDir volume. The main container's wrapper script uses it to create a
+	// PTY, bind-mounts the PTY slave over /dev/kmsg (preventing host dmesg
+	// pollution), and pipes PTY master output to the container's stdout so
+	// Android kernel logs are accessible via `kubectl logs <pod>`. Set to true
+	// to disable this mechanism entirely.
+	// +optional
+	DisableKmsgRedirect bool `json:"disableKmsgRedirect,omitempty"`
+
+	// KmsgToolsImage overrides the default init container image used to inject
+	// the socat binary. The image must provide /bin/socat (statically linked)
+	// and /bin/sh. Has no effect when DisableKmsgRedirect is true.
+	// Defaults to ghcr.io/isning/redroid-operator/kmsg-tools:latest.
+	// +optional
+	KmsgToolsImage string `json:"kmsgToolsImage,omitempty"`
+
 	// ExtraArgs are additional androidboot.* arguments passed to the redroid container.
 	// Supports $(VAR_NAME) substitution from ExtraEnv.
 	// +optional

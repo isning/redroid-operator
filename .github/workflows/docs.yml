@@ -55,14 +55,10 @@ jobs:
         run: make manifests
 
       - name: Generate CRD reference (crdoc)
-        run: |
-          mkdir -p docs/generated
-          crdoc \
-            --resources config/crd/bases/ \
-            --output docs/generated/crd-reference.md
+        run: make docs-crd
 
       - name: Generate Helm chart README (helm-docs)
-        run: helm-docs --chart-search-root charts/
+        run: make docs-helm
 
       # ── Publish to gh-pages ───────────────────────────────────────────────
       - name: Configure git

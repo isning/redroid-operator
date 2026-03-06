@@ -41,6 +41,10 @@
               types   = [ "go" ];
               # goimports ships with go tools; use the one from nixpkgs
               package = pkgs.gotools;
+              excludes = [
+                "zz_generated\\.deepcopy\\.go$"
+                "vendor/.*"
+              ];
             };
             # Full lint suite matching the CI configuration
             golangci-lint = {
