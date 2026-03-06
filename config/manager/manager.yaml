@@ -43,6 +43,9 @@ spec:
         - name: manager
           image: ghcr.io/isning/redroid-operator:latest
           imagePullPolicy: Always
+          env:
+            - name: RELATED_IMAGE_KMSG_TOOLS
+              value: ghcr.io/isning/redroid-operator/kmsg-tools:latest
           command: [/manager]
           args:
             - --leader-elect

@@ -65,8 +65,10 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- with .Values.extraEnv }}
           env:
+            - name: RELATED_IMAGE_KMSG_TOOLS
+              value: {{ include "redroid-operator.kmsgToolsImage" . | quote }}
+          {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
           {{- end }}
       {{- with .Values.nodeSelector }}

@@ -3,6 +3,8 @@ package controller
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -556,16 +558,26 @@ func buildInitAndMainContainers(
 	}
 
 	// Init container copies socat to the shared emptyDir.
-	toolsImg := "ghcr.io/isning/redroid-operator/kmsg-tools:latest"
+	toolsImg := os.Getenv("RELATED_IMAGE_KMSG_TOOLS")
+	if toolsImg == "" {
+		toolsImg = "ghcr.io/isning/redroid-operator/kmsg-tools:latest"
+	}
 	if instance.Spec.KmsgToolsImage != "" {
 		toolsImg = instance.Spec.KmsgToolsImage
+	}
+
+	pullPolicyInit := corev1.PullIfNotPresent
+	lastColon := strings.LastIndex(toolsImg, ":")
+	lastSlash := strings.LastIndex(toolsImg, "/")
+	if strings.HasSuffix(toolsImg, ":latest") || lastColon <= lastSlash {
+		pullPolicyInit = corev1.PullAlways
 	}
 
 	initContainer := corev1.Container{
 		Name:            "kmsg-tools",
 		Image:           toolsImg,
-		ImagePullPolicy: corev1.PullIfNotPresent,
-		Command:         []string{"/bin/sh", "-c", "cp /bin/socat /bin/busybox /kmsg-tools/ || exit 1; chmod +x /kmsg-tools/socat /kmsg-tools/busybox"},
+		ImagePullPolicy: pullPolicyInit,
+		Command:         []string{"/bin/sh", "-c", "cp /kmsg-bin/socat /kmsg-bin/busybox /kmsg-tools/ || exit 1; chmod +x /kmsg-tools/socat /kmsg-tools/busybox"},
 		VolumeMounts: []corev1.VolumeMount{
 			{Name: kmsgSyncVolume, MountPath: kmsgSyncMount},
 		},

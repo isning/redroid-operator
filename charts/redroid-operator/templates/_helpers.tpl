@@ -66,3 +66,12 @@ Manager container image (repo:tag, tag defaults to appVersion).
 {{- define "redroid-operator.image" -}}
 {{- printf "%s:%s" .Values.image.repository (default .Chart.AppVersion .Values.image.tag) }}
 {{- end }}
+
+{{/*
+kmsg-tools image (repo:tag, tag defaults to operator image tag or appVersion).
+*/}}
+{{- define "redroid-operator.kmsgToolsImage" -}}
+{{- $kmsgRepo := .Values.kmsgToolsImage.repository | default "ghcr.io/isning/redroid-operator/kmsg-tools" -}}
+{{- $kmsgTag := (or .Values.kmsgToolsImage.tag .Values.image.tag .Chart.AppVersion) -}}
+{{- printf "%s:%s" $kmsgRepo $kmsgTag -}}
+{{- end }}

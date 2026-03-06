@@ -291,7 +291,7 @@ var _ = Describe("RedroidInstance Features", func() {
 		Expect(ic.Name).To(Equal("kmsg-tools"))
 		Expect(ic.Image).To(Equal("ghcr.io/isning/redroid-operator/kmsg-tools:latest"))
 		Expect(ic.Command).To(HaveLen(3))
-		Expect(ic.Command[2]).To(ContainSubstring("cp /bin/socat /bin/busybox /kmsg-tools/"))
+		Expect(ic.Command[2]).To(ContainSubstring("cp /kmsg-bin/socat /kmsg-bin/busybox /kmsg-tools/"))
 
 		// Main container: /kmsg-tools/busybox sh wrapper using injected socat.
 		main := pod.Spec.Containers[0]

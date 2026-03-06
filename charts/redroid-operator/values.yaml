@@ -11,6 +11,14 @@ image:
   # -- Image tag. Defaults to the chart appVersion.
   tag: ""
 
+kmsgToolsImage:
+  # -- Image repository.
+  repository: ghcr.io/isning/redroid-operator/kmsg-tools
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+  # -- Overrides the kmsg-tools image tag (defaults to the operator's image tag or chart appVersion)
+  tag: ""
+
 # -- Image pull secrets (list of {name: ...}).
 imagePullSecrets: []
 

@@ -16,9 +16,11 @@ RUN git init && git add flake.nix flake.lock && \
 # We use alpine over scratch so we have /bin/sh to execute the copy command
 FROM docker.io/library/alpine:3.19
 
-# Copy the static binaries from the Nix build stage
-COPY --from=builder /tmp/socat/bin/socat /bin/socat
-COPY --from=builder /tmp/busybox/bin/busybox /bin/busybox
+# Copy the static binaries from the Nix build stage to a dedicated folder
+# to avoid accidentally using or overwriting Alpine's dynamically linked utilities.
+RUN mkdir -p /kmsg-bin
+COPY --from=builder /tmp/socat/bin/socat /kmsg-bin/socat
+COPY --from=builder /tmp/busybox/bin/busybox /kmsg-bin/busybox
 
 # Verify they run and are ready to be injected
-RUN /bin/socat -d -d -h | head -n 1 && /bin/busybox | head -n 1
+RUN /kmsg-bin/socat -d -d -h | head -n 1 && /kmsg-bin/busybox | head -n 1
