@@ -159,6 +159,20 @@ Use spec.suspend or status.suspended on all normal instances first.<br/>
         </td>
         <td>false</td>
       </tr><tr>
+        <td><b>disableKmsgRedirect</b></td>
+        <td>boolean</td>
+        <td>
+          DisableKmsgRedirect disables the default /dev/kmsg redirect.
+By default (false) the operator injects an init container that copies a
+musl-statically-linked socat binary into the redroid container via an
+emptyDir volume. The main container's wrapper script uses it to create a
+PTY, bind-mounts the PTY slave over /dev/kmsg (preventing host dmesg
+pollution), and pipes PTY master output to the container's stdout so
+Android kernel logs are accessible via `kubectl logs <pod>`. Set to true
+to disable this mechanism entirely.<br/>
+        </td>
+        <td>false</td>
+      </tr><tr>
         <td><b>extraArgs</b></td>
         <td>[]string</td>
         <td>
@@ -216,6 +230,16 @@ When empty the Redroid runtime auto-detects the GPU node.<br/>
         <td>[]object</td>
         <td>
           ImagePullSecrets references Secret resources for pulling private images.<br/>
+        </td>
+        <td>false</td>
+      </tr><tr>
+        <td><b>kmsgToolsImage</b></td>
+        <td>string</td>
+        <td>
+          KmsgToolsImage overrides the default init container image used to inject
+the socat binary. The image must provide /bin/socat (statically linked)
+and /bin/sh. Has no effect when DisableKmsgRedirect is true.
+Defaults to ghcr.io/isning/redroid-operator/kmsg-tools:latest.<br/>
         </td>
         <td>false</td>
       </tr><tr>
@@ -6241,7 +6265,7 @@ Used with dynamically provisioned Quobyte volumes, value is set by the plugin<br
         <td>string</td>
         <td>
           user to map volume access to
-Defaults to serviceaccount user<br/>
+Defaults to serivceaccount user<br/>
         </td>
         <td>false</td>
       </tr></tbody>
@@ -10722,7 +10746,7 @@ Used with dynamically provisioned Quobyte volumes, value is set by the plugin<br
         <td>string</td>
         <td>
           user to map volume access to
-Defaults to serviceaccount user<br/>
+Defaults to serivceaccount user<br/>
         </td>
         <td>false</td>
       </tr></tbody>
