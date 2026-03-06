@@ -96,6 +96,8 @@ var _ = Describe("RedroidInstance Controller", func() {
 			c := pod.Spec.Containers[0]
 			Expect(c.Name).To(Equal("redroid"))
 			Expect(c.Image).To(Equal("redroid/redroid:16.0.0-latest"))
+			Expect(c.ReadinessProbe).NotTo(BeNil())
+			Expect(c.ReadinessProbe.Exec.Command).To(ContainElement(ContainSubstring("sys.boot_completed")))
 		})
 
 		It("Creates no Pod when suspended=true", func() {

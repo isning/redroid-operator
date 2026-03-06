@@ -700,6 +700,18 @@ func (r *RedroidTaskReconciler) buildTaskPodSpec(
 					{Name: "data-diff", MountPath: "/data-diff/" + indexStr, SubPath: indexStr},
 					{Name: "dev-dri", MountPath: "/dev/dri"},
 				},
+				ReadinessProbe: &corev1.Probe{
+					ProbeHandler: corev1.ProbeHandler{
+						Exec: &corev1.ExecAction{
+							Command: []string{
+								"/system/bin/sh",
+								"-c",
+								`test "1" = "$(/system/bin/getprop sys.boot_completed)"`,
+							},
+						},
+					},
+					InitialDelaySeconds: 5,
+				},
 			},
 		},
 		Containers: integrationContainers,

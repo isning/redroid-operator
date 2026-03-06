@@ -189,6 +189,8 @@ var _ = Describe("RedroidTask Controller", func() {
 					restart := corev1.ContainerRestartPolicyAlways
 					Expect(ic.RestartPolicy).NotTo(BeNil())
 					Expect(*ic.RestartPolicy).To(Equal(restart), "redroid sidecar should have restartPolicy: Always")
+					Expect(ic.ReadinessProbe).NotTo(BeNil())
+					Expect(ic.ReadinessProbe.Exec.Command).To(ContainElement(ContainSubstring("sys.boot_completed")))
 				}
 			}
 			Expect(found).To(BeTrue(), "expected init container named 'redroid'")
