@@ -26,6 +26,8 @@ jobs:
     name: Snapshot release clean
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+
       - name: Delete old snapshot release and tag
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
